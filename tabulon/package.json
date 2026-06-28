@@ -4,13 +4,13 @@
   "version": "0.1.0",
   "productName": "Tabulon",
   "keywords": ["board games", "chess", "draughts", "tauri", "javascript"],
-  "homepage": "https://github.com/votre-org/tabulon",
+  "homepage": "https://github.com/fhoudebert/biscandine",
   "author": {
-    "name": "Votre Nom"
+    "name": "fhoudebert"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/votre-org/tabulon"
+    "url": "https://github.com/fhoudebert/biscandine"
   },
   "license": "AGPL-3.0",
   "scripts": {
