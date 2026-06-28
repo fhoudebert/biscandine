@@ -67,7 +67,11 @@ export const getAllWindows    = (...args) => tauri().window.getAllWindows(...arg
 // @tauri-apps/api/webviewWindow — classe, même traitement que Store ci-dessous.
 export const WebviewWindow = new Proxy(function () {}, {
     construct(_target, args) { return new (tauri().webviewWindow.WebviewWindow)(...args); },
-    get(_target, prop) { return tauri().webviewWindow.WebviewWindow[prop]; },
+    get(_target, prop) {
+        const Real = tauri().webviewWindow.WebviewWindow;
+        const value = Real[prop];
+        return typeof value === 'function' ? value.bind(Real) : value;
+    },
 });
 export const getCurrentWebviewWindow = (...args) => tauri().webviewWindow.getCurrentWebviewWindow(...args);
 export const getAllWebviewWindows    = (...args) => tauri().webviewWindow.getAllWebviewWindows(...args);
@@ -85,9 +89,18 @@ export const openDialog = (...args) => tauri().dialog.open(...args);
 // wrapper de la même façon. Store.load(...) est une méthode statique (cf.
 // jb-controller.js/worker-bridge.js qui font `Store.load('tabulon.json')`),
 // donc un Proxy paresseux sur la classe elle-même est nécessaire ici.
+// IMPORTANT : `get` doit lier (bind) la propriété récupérée à l'objet réel
+// (`tauri().store.Store`), pas la retourner détachée — sinon un éventuel
+// usage interne de `this` dans l'implémentation Tauri (non vérifiable
+// depuis l'extérieur, le bundle est minifié) se retrouverait silencieusement
+// cassé dès qu'on appelle `Store.load(...)` via ce proxy.
 export const Store = new Proxy(function () {}, {
     construct(_target, args) { return new (tauri().store.Store)(...args); },
-    get(_target, prop) { return tauri().store.Store[prop]; },
+    get(_target, prop) {
+        const RealStore = tauri().store.Store;
+        const value = RealStore[prop];
+        return typeof value === 'function' ? value.bind(RealStore) : value;
+    },
 });
 
 // @tauri-apps/plugin-os
