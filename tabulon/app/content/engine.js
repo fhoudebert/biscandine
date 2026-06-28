@@ -28,7 +28,7 @@ function Validate(name) {
         case 'type':    p = Promise.resolve(value !== ''); break;
         case 'binary':  p = tRpc.call('is_file', value); break;
         case 'details':
-            try { jsyaml.safeLoad(value); p = Promise.resolve(true); }
+            try { jsyaml.load(value); p = Promise.resolve(true); }
             catch { p = Promise.resolve(false); }
             break;
         default: p = Promise.resolve(false);

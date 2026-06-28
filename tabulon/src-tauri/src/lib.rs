@@ -68,6 +68,7 @@ pub fn run() {
             match_cmds::get_camera,
             match_cmds::set_camera,
             match_cmds::show_board_state,
+            match_cmds::remove_engine,
             match_cmds::book_history_view,
             match_cmds::load_board_state,
             match_cmds::notify_user,
@@ -88,7 +89,6 @@ pub fn run() {
             window_cmds::open_save_template,
             window_cmds::open_info,
             window_cmds::open_board_state,
-            window_cmds::open_board_state_dialog,
             window_cmds::open_book,
             window_cmds::open_book_match,
             window_cmds::open_moves,
@@ -103,8 +103,9 @@ pub fn run() {
             // ── Moteurs externes ──────────────────────────────────────────────
             engine_cmds::is_file,
             engine_cmds::save_engine,
-            engine_cmds::engine_get_move,
-            engine_cmds::kill_match_engines,
+            engine_cmds::engine_spawn,
+            engine_cmds::engine_write,
+            engine_cmds::engine_kill,
             // ── Templates ────────────────────────────────────────────────────
             template_cmds::play_template,
             template_cmds::save_template,

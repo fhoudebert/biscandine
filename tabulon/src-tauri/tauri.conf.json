@@ -4,13 +4,15 @@
   "version": "0.1.0",
   "identifier": "fr.biscandine.tabulon",
   "build": {
-    "frontendDist": "../src"
+    "frontendDist": "../app"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "tabulon",
+        "label": "main",
+        "title": "Tabulon",
+        "url": "content/hub.html",
         "width": 800,
         "height": 600
       }

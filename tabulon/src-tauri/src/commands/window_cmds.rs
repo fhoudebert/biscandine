@@ -4,15 +4,9 @@
 // Chaque commande ouvre (ou focus) la fenêtre secondaire correspondante.
 
 use crate::window_manager::{open_window, WindowOptions};
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter};
 use serde_json::Value;
 // urlencoding est déjà une dépendance transitive de Tauri
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-fn play_window(app: &AppHandle, match_id: u32) -> Option<WebviewWindow> {
-    app.get_webview_window(&format!("play-{match_id}"))
-}
 
 // ── Commandes d'ouverture ─────────────────────────────────────────────────────
 
@@ -26,7 +20,7 @@ pub fn open_history(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 400.0, height: 500.0,
         min_width: 280.0, min_height: 200.0,
         persist_key: Some(format!("window:history-{match_id}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openClock", matchId)
@@ -39,7 +33,7 @@ pub fn open_clock(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 400.0, height: 220.0,
         min_width: 200.0, min_height: 100.0,
         persist_key: Some(format!("window:clock-{match_id}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openPlayers", matchId)
@@ -52,7 +46,7 @@ pub fn open_players(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 460.0, height: 300.0,
         min_width: 300.0, min_height: 200.0,
         persist_key: None,
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openViewOptions", matchId)
@@ -65,7 +59,7 @@ pub fn open_view_options(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 360.0, height: 400.0,
         min_width: 260.0, min_height: 200.0,
         persist_key: None,
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openCameraView", matchId)
@@ -78,7 +72,7 @@ pub fn open_camera_view(app: AppHandle, match_id: u32, game_name: String) -> Res
         width: 340.0, height: 500.0,
         min_width: 260.0, min_height: 300.0,
         persist_key: Some(format!("window:camera-{match_id}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openSaveTemplate", matchId)
@@ -91,7 +85,7 @@ pub fn open_save_template(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 360.0, height: 240.0,
         min_width: 260.0, min_height: 180.0,
         persist_key: None,
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openInfo", gameName)
@@ -104,7 +98,7 @@ pub fn open_info(app: AppHandle, game_name: String) -> Result<(), String> {
         width: 600.0, height: 500.0,
         min_width: 400.0, min_height: 300.0,
         persist_key: Some(format!("window:info-{game_name}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openBoardState", gameName, matchId?)
@@ -119,7 +113,7 @@ pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>
         width: 400.0, height: 300.0,
         min_width: 280.0, min_height: 180.0,
         persist_key: None,
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openBook", gameName, fileName, data)
@@ -134,7 +128,7 @@ pub fn open_book(app: AppHandle, game_name: String, file_name: String, _data: St
         width: 400.0, height: 500.0,
         min_width: 280.0, min_height: 300.0,
         persist_key: Some(format!("window:book-{game_name}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openBookMatch", gameName, match)
@@ -156,17 +150,7 @@ pub fn open_moves(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 240.0, height: 400.0,
         min_width: 180.0, min_height: 200.0,
         persist_key: Some(format!("window:moves-{match_id}")),
-    }).map_err(|e| e.to_string())
-}
-
-/// rpc.call("showBoardState", gameName, matchId)
-#[tauri::command]
-pub fn show_board_state(app: AppHandle, game_name: String, match_id: u32) -> Result<(), String> {
-    // TODO Phase 4 : récupérer la position FEN/PJN depuis AppState et l'émettre
-    if let Some(win) = app.get_webview_window(&format!("board-state-{game_name}-{match_id}")) {
-        win.emit("setPosition", "").map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openGame", gameName)  →  ouvre la fiche d'un jeu (game.html)
@@ -179,7 +163,7 @@ pub fn open_game(app: AppHandle, game_name: String) -> Result<(), String> {
         width: 700.0, height: 500.0,
         min_width: 400.0, min_height: 300.0,
         persist_key: Some(format!("window:game-{game_name}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("editEngine", id?)  →  ouvre engine.html (création ou édition)
@@ -206,7 +190,7 @@ pub fn edit_engine(app: AppHandle, state: tauri::State<crate::state::AppState>, 
         width: 400.0, height: 420.0,
         min_width: 300.0, min_height: 300.0,
         persist_key: None,
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Ouvre book-history.html pour visualiser un PJN chargé
@@ -219,7 +203,7 @@ pub fn open_book_history(app: AppHandle, match_id: u32) -> Result<(), String> {
         width: 500.0, height: 600.0,
         min_width: 300.0, min_height: 300.0,
         persist_key: Some(format!("window:book-history-{match_id}")),
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// rpc.call("openBoardState", gameName, matchId)  →  open-position.html (saisie FEN)
@@ -233,7 +217,7 @@ pub fn open_position(app: AppHandle, game_name: String, match_id: Option<u32>) -
         width: 400.0, height: 240.0,
         min_width: 280.0, min_height: 180.0,
         persist_key: None,
-    }).map_err(|e| e.to_string())
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
 // ── Relay RPC (push Rust → renderer cible) ───────────────────────────────────
@@ -250,7 +234,9 @@ pub fn relay_to_window(
     event: String,    // nom de l'événement Tauri
     payload: Value,   // données à transmettre
 ) -> Result<(), String> {
-    let win = app.get_webview_window(&target)
-        .ok_or_else(|| format!("Window '{target}' not found"))?;
-    win.emit(&event, payload).map_err(|e| e.to_string())
+    // emit_to (et non emit, qui diffuserait à TOUTES les fenêtres de l'app)
+    // pour garantir que seule la fenêtre `target` reçoit l'event — important
+    // dès que plusieurs parties (donc plusieurs fenêtres play-N) sont ouvertes
+    // en même temps.
+    app.emit_to(&target, &event, payload).map_err(|e| e.to_string())
 }

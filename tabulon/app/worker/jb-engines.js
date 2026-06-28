@@ -46,11 +46,18 @@ class Engine {
 // ── ProcessEngine ─────────────────────────────────────────────────────────────
 // Les processus sont gérés côté Rust. Ce code communique via le hub (postMessage).
 // Interface : sendToHub({ type:'engine-spawn'|'engine-write'|'engine-kill', ... })
+//
+// onSpawned(processId, engine) / onDestroyed(processId) permettent à l'appelant
+// (match-worker.js) de maintenir un registre processId → instance, nécessaire
+// pour router chaque ligne de stdout entrante (event "engine-line") vers la
+// bonne instance via receiveLine().
 
 class ProcessEngine extends Engine {
-    constructor(sendToHub) {
+    constructor(sendToHub, onSpawned, onDestroyed) {
         super();
-        this._sendToHub = sendToHub; // fn(msg) → Promise<response>
+        this._sendToHub  = sendToHub;  // fn(msg) → Promise<response>
+        this._onSpawned   = onSpawned;   // fn(processId, engine), optionnel
+        this._onDestroyed = onDestroyed; // fn(processId), optionnel
         this._inputQueue = [];
         this._waiter     = null;
         this._processId  = null;
@@ -72,6 +79,7 @@ class ProcessEngine extends Engine {
             initialCommands: cfg.details?.initialCommands || [],
         });
         this._processId = resp.processId;
+        this._onSpawned?.(this._processId, this);
     }
 
     /** Reçoit une ligne depuis le processus moteur (appelé par le hub) */
@@ -115,8 +123,10 @@ class ProcessEngine extends Engine {
 
     async destroy() {
         if (this._processId !== null) {
-            await this._sendToHub({ type: 'engine-kill', processId: this._processId });
+            const processId = this._processId;
+            await this._sendToHub({ type: 'engine-kill', processId });
             this._processId = null;
+            this._onDestroyed?.(processId);
         }
         return super.destroy();
     }
@@ -275,13 +285,16 @@ class DxpEngine extends Engine {
 }
 
 // ── Factory ───────────────────────────────────────────────────────────────────
+//
+// onSpawned(processId, engine) / onDestroyed(processId) : voir ProcessEngine
+// ci-dessus. Ignorés par DxpEngine, qui n'utilise pas de sous-processus Rust.
 
-export function createEngine(config, sendToHub) {
+export function createEngine(config, sendToHub, onSpawned, onDestroyed) {
     let engine;
     switch (config.type) {
-        case 'cecp': engine = new CecpEngine(sendToHub); break;
-        case 'uci':  engine = new UciEngine(sendToHub);  break;
-        case 'hub':  engine = new HubEngine(sendToHub);  break;
+        case 'cecp': engine = new CecpEngine(sendToHub, onSpawned, onDestroyed); break;
+        case 'uci':  engine = new UciEngine(sendToHub, onSpawned, onDestroyed);  break;
+        case 'hub':  engine = new HubEngine(sendToHub, onSpawned, onDestroyed);  break;
         case 'dxp':  engine = new DxpEngine(sendToHub);  break;
         default: throw new Error('Unsupported engine type: ' + config.type);
     }

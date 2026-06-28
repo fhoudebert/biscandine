@@ -23,6 +23,16 @@ let   port     = null;    // MessagePort vers hub.js
 let   settings = {};      // clé-valeur (synchronisé avec Tauri store via hub)
 let   Jocly    = null;    // lib Jocly — injectée par le hub après chargement
 
+// Requêtes worker → hub en attente de réponse (symétrique de pending côté
+// worker-bridge.js, mais dans l'autre sens : ici c'est le worker qui attend).
+let   hubReqId = 0;
+const pendingHubRequests = {}; // reqId → { resolve, reject }
+
+// Registre des moteurs externes actifs, indexé par processId Rust, pour
+// router chaque ligne de stdout entrante (event "engine-line") vers la bonne
+// instance ProcessEngine (voir jb-engines.js::ProcessEngine.receiveLine).
+const engineByProcessId = {};
+
 // ── Helpers store ─────────────────────────────────────────────────────────────
 function storeGet(key, def) { return key in settings ? settings[key] : def; }
 function storeSet(key, val) {
@@ -33,6 +43,18 @@ function storeSet(key, val) {
 // ── Émettre un event vers hub (asynchrone, sans réponse attendue) ─────────────
 function emit(type, payload) {
     port.postMessage({ type: 'event', event: type, payload });
+}
+
+// ── Émettre une requête vers hub ET attendre sa réponse ───────────────────────
+// Utilisé pour les opérations que seul Rust peut faire et dont le résultat
+// est nécessaire avant de continuer (ex: engine-spawn → processId).
+// Le hub (worker-bridge.js) répond via port.postMessage({ replyTo: reqId, ... }).
+function emitAndWait(type, payload) {
+    return new Promise((resolve, reject) => {
+        const reqId = ++hubReqId;
+        pendingHubRequests[reqId] = { resolve, reject };
+        port.postMessage({ type: 'event', event: type, payload: { ...payload, reqId } });
+    });
 }
 
 // ── Classe JBMatch ────────────────────────────────────────────────────────────
@@ -56,6 +78,12 @@ class JBMatch {
         // Contrôle du cycle de vie
         this._actionAbort = null;
         this._nextHumanMove = null;
+    }
+
+    /** Passé aux instances ProcessEngine (jb-engines.js) pour qu'elles
+     *  puissent demander à Rust de spawn/écrire/tuer un processus moteur. */
+    _sendToHub(msg) {
+        return emitAndWait(msg.type, msg);
     }
 
     async init(clock) {
@@ -253,7 +281,12 @@ class JBMatch {
 
         const who = await this.match.getTurn();
         if (!this.engines[who]) {
-            this.engines[who] = createEngine(engineCfg, msg => this._sendToHub(msg));
+            this.engines[who] = createEngine(
+                engineCfg,
+                msg => this._sendToHub(msg),
+                (processId, engine) => { engineByProcessId[processId] = engine; },
+                (processId) => { delete engineByProcessId[processId]; },
+            );
         }
         const engineMove = await this.engines[who].catchUp(this.match, this.clock);
         const move       = await this.engines[who].getBestMove(engineMove);
@@ -623,6 +656,13 @@ const controller = {
         if (m) m.resolveCameraGet(camera);
     },
 
+    // Ligne de stdout d'un processus moteur externe (depuis engine_cmds.rs,
+    // relayée par worker-bridge.js). Route vers l'instance ProcessEngine
+    // enregistrée sous ce processId (voir _nextMoveEngine/onSpawned ci-dessus).
+    engineLine(processId, line) {
+        engineByProcessId[processId]?.receiveLine(line);
+    },
+
     // ── Satellites ──────────────────────────────────────────────────────────────
     registerSatellite(matchId, type, label) {
         const m = matches[matchId]; if (!m) return;
@@ -815,6 +855,18 @@ const controller = {
 self.onconnect = (e) => {
     port = e.ports[0];
     port.onmessage = async ({ data }) => {
+        // Réponse à une requête emitAndWait() (engine-spawn/write/kill...).
+        // Ces messages n'ont pas de "type" de commande, juste { replyTo, result|error }.
+        if ('replyTo' in data) {
+            const pending = pendingHubRequests[data.replyTo];
+            if (pending) {
+                delete pendingHubRequests[data.replyTo];
+                if (data.error) pending.reject(new Error(data.error));
+                else             pending.resolve(data.result);
+            }
+            return;
+        }
+
         const { id, type, args = [] } = data;
         if (type === 'inject-jocly') {
             // Le hub envoie la référence Jocly après chargement du script

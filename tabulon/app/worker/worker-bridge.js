@@ -10,8 +10,6 @@
 import { invoke }            from '@tauri-apps/api/core';
 import { emit, listen }      from '@tauri-apps/api/event';
 import { Store }             from '@tauri-apps/plugin-store';
-import { save as dlgSave }   from '@tauri-apps/plugin-dialog';
-import { getCurrentWindow }  from '@tauri-apps/api/window';
 
 let worker   = null;
 let store    = null;
@@ -133,15 +131,42 @@ async function handleWorkerEvent(event, payload) {
             await invoke('show_error_dialog', payload).catch(() => {});
             break;
 
-        // Spawn/write/kill moteur → délégué à Rust
-        case 'engine-spawn':
-        case 'engine-write':
-        case 'engine-kill':
-            // Ces events sont des requêtes worker→Rust avec réponse.
-            // Elles arrivent via _sendToHub dans jb-engines.js,
-            // qui passe par workerCall() et attend une réponse.
-            // Ici on les reçoit comme events sans id → ne pas traiter comme events.
+        // Spawn/write/kill moteur → délégué à Rust.
+        // Ces 3 events viennent de JBMatch._sendToHub() (via emitAndWait côté
+        // worker, voir match-worker.js), donc payload.reqId est toujours
+        // présent : on doit répondre directement sur le port avec
+        // { replyTo: reqId, result|error }, pas via workerCall (qui créerait
+        // une requête dans le mauvais sens).
+        case 'engine-spawn': {
+            const { reqId, ...spawnArgs } = payload;
+            try {
+                const result = await invoke('engine_spawn', spawnArgs);
+                worker.port.postMessage({ replyTo: reqId, result });
+            } catch (e) {
+                worker.port.postMessage({ replyTo: reqId, error: String(e) });
+            }
             break;
+        }
+        case 'engine-write': {
+            const { reqId, processId, text } = payload;
+            try {
+                await invoke('engine_write', { processId, text });
+                worker.port.postMessage({ replyTo: reqId, result: null });
+            } catch (e) {
+                worker.port.postMessage({ replyTo: reqId, error: String(e) });
+            }
+            break;
+        }
+        case 'engine-kill': {
+            const { reqId, processId } = payload;
+            try {
+                await invoke('engine_kill', { processId });
+                worker.port.postMessage({ replyTo: reqId, result: null });
+            } catch (e) {
+                worker.port.postMessage({ replyTo: reqId, error: String(e) });
+            }
+            break;
+        }
 
         default:
             console.warn('[bridge] unknown worker event:', event, payload);
@@ -174,7 +199,9 @@ async function init() {
     worker.port.start();
 
     // Injecter Jocly dans le worker (chargé via <script> tag dans hub.html)
-    const joclyUrl = new URL('../node_modules/jocly/dist/browser/jocly.js', import.meta.url).href;
+    // dist/ (build de jocly2 via gulp build) est copié à la racine de
+    // tabulon/, pas dans app/node_modules/ — voir README.md → installation.
+    const joclyUrl = new URL('../../dist/browser/jocly.js', import.meta.url).href;
     await workerCall('inject-jocly', joclyUrl);
 
     // Synchroniser le store avec le worker
@@ -207,6 +234,27 @@ async function init() {
     // Fenêtre play prête → démarrer la boucle de jeu
     listen('play-ready', ({ payload }) => {
         workerCall('startPlay', payload.matchId).catch(() => {});
+    });
+
+    // Ligne de stdout d'un processus moteur externe (engine_cmds.rs).
+    // Route vers controller.engineLine, qui retrouve l'instance ProcessEngine
+    // via son registre processId→engine (voir match-worker.js).
+    listen('engine-line', ({ payload }) => {
+        workerCall('engineLine', payload.processId, payload.line).catch(() => {});
+    });
+
+    // Requête renderer → Rust → worker (match_cmds.rs::dispatch_to_worker).
+    // Remplace l'ancien controller-call/controller-reply : un renderer a
+    // invoqué une commande Tauri (new_match, set_players, get_history…),
+    // Rust nous demande de l'exécuter sur le worker et attend la réponse.
+    listen('dispatch-to-worker', async ({ payload }) => {
+        const { method, args, token } = payload;
+        try {
+            const result = await workerCall(method, ...(Array.isArray(args) ? args : [args]));
+            await emit('worker-reply:' + token, { result });
+        } catch (e) {
+            await emit('worker-reply:' + token, { error: e.message || String(e) });
+        }
     });
 }
 
