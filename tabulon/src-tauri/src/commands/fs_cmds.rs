@@ -16,7 +16,6 @@
 
 use std::fs;
 use std::path::Path;
-use tauri::AppHandle;
 
 /// Lit un fichier texte (UTF-8) et retourne son contenu.
 ///

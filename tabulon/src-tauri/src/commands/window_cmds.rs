@@ -116,28 +116,26 @@ pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("openBook", gameName, fileName, data)
+/// rpc.call("openBook", gameName, fileName, data) — délègue à controller.openBook
+/// côté worker, qui parse le PJN/PGN/PDN (via PJNParser.js) et ouvre lui-même
+/// book.html une fois les parties extraites (events "book-ready"/"book-error",
+/// voir worker-bridge.js::handleWorkerEvent). Rust n'ouvre pas la fenêtre ici :
+/// le faire en plus aurait créé une fenêtre vide avant que le worker ne la
+/// peuple, ou un doublon si le worker l'ouvre séparément.
 #[tauri::command]
-pub fn open_book(app: AppHandle, game_name: String, file_name: String, _data: String) -> Result<(), String> {
-    // TODO Phase 4 : parser le PGN/PDN/PJN et stocker dans AppState avant d'ouvrir
-    let label = format!("book-{game_name}");
-    open_window(&app, WindowOptions {
-        label: &label,
-        url:   &format!("content/book.html?game={game_name}&file={file_name}"),
-        title: &format!("{game_name} Book"),
-        width: 400.0, height: 500.0,
-        min_width: 280.0, min_height: 300.0,
-        persist_key: Some(format!("window:book-{game_name}")),
-    }).map(|_| ()).map_err(|e| e.to_string())
+pub async fn open_book(app: AppHandle, game_name: String, file_name: String, data: String) -> Result<Value, String> {
+    crate::commands::match_cmds::dispatch_to_worker(
+        &app, "openBook", serde_json::json!([game_name, file_name, data]),
+    ).await
 }
 
-/// rpc.call("openBookMatch", gameName, match)
+/// rpc.call("openBookMatch", gameName, match) — délègue à controller.openBookMatch
+/// côté worker (crée un JBMatch, affiche le plateau, ouvre book-history.html).
 #[tauri::command]
-pub fn open_book_match(app: AppHandle, game_name: String, book_match: Value) -> Result<(), String> {
-    // Récupère le matchId courant depuis AppState si nécessaire
-    // TODO Phase 4 : charger la partie du livre dans un nouveau match
-    log::info!("openBookMatch game={game_name} match={book_match}");
-    Ok(())
+pub async fn open_book_match(app: AppHandle, game_name: String, book_match: Value) -> Result<Value, String> {
+    crate::commands::match_cmds::dispatch_to_worker(
+        &app, "openBookMatch", serde_json::json!([game_name, book_match]),
+    ).await
 }
 
 /// rpc.call("openMoves", matchId)

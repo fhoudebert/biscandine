@@ -82,7 +82,21 @@ pub fn save_engine(app: AppHandle, state: State<AppState>, engine: Value) -> Res
         let list: Vec<&crate::state::Engine> = engines.iter().collect();
         app.emit_to("main", "updateEngines", &list).map_err(|e| e.to_string())?;
     }
-    // TODO Phase 6 : persister via tauri-plugin-store (cf. template_cmds.rs)
+    // Persister dans le store, au même format que celui utilisé côté worker
+    // (objet indexé par id, pas tableau — voir match-worker.js::storeGet('engines', {}))
+    // pour que les deux restent lisibles l'un par l'autre.
+    {
+        use tauri_plugin_store::StoreExt;
+        if let Ok(store) = app.store("tabulon.json") {
+            let engines = state.engines.lock().unwrap();
+            let mut by_id = serde_json::Map::new();
+            for e in engines.iter() {
+                by_id.insert(e.id.clone(), serde_json::to_value(e).unwrap_or_default());
+            }
+            let _ = store.set("engines", serde_json::Value::Object(by_id));
+            let _ = store.save();
+        }
+    }
     Ok(())
 }
 

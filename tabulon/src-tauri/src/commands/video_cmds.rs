@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 // ── État des enregistrements actifs ──────────────────────────────────────────
 
@@ -93,14 +93,18 @@ pub async fn start_recording(
         }
     }
 
-    // Lire les options d'enregistrement depuis le store
-    let ignore_identical: u32 = app
+    // Lire les options d'enregistrement depuis le store.
+    // TODO: ces deux réglages ne sont pas encore exposés dans une fenêtre
+    // d'options (aucun fichier JS n'écrit ces clés de store actuellement)
+    // ni appliqués à la commande ffmpeg ci-dessous — préfixées par `_` pour
+    // l'instant, à câbler quand l'UI correspondante existera.
+    let _ignore_identical: u32 = app
         .store("tabulon.json").ok()
         .and_then(|s| s.get("video-record:ignoreIdenticalFrames"))
         .and_then(|v| v.as_u64())
         .unwrap_or(30) as u32;
 
-    let reuse_last: bool = app
+    let _reuse_last: bool = app
         .store("tabulon.json").ok()
         .and_then(|s| s.get("video-record:reuseLastFrame"))
         .and_then(|v| v.as_bool())

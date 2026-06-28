@@ -9,6 +9,7 @@ use engine_cmds::EnginePool;
 use hub_cmds::NotifyChannels;
 use state::AppState;
 use tauri::Manager;
+use tauri_plugin_cli::CliExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,8 +19,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_fs::Builder::default().build())
-        .plugin(tauri_plugin_updater::Builder::default().build())
+        .plugin(tauri_plugin_fs::init())
+        // tauri_plugin_updater désactivé : il exige une config valide
+        // (pubkey + endpoints) dès son enregistrement, sinon panique au
+        // démarrage ("invalid type: null, expected struct Config"). Pas encore
+        // configuré (voir ARCHITECTURE.md → Travaux restants → Updater).
+        // .plugin(tauri_plugin_updater::Builder::default().build())
         .plugin(tauri_plugin_cli::init())
         // ── États partagés ───────────────────────────────────────────────────
         .manage(AppState::default())
@@ -28,16 +33,36 @@ pub fn run() {
         .manage(EnginePool::default())
         // ── Setup ─────────────────────────────────────────────────────────────
         .setup(|app| {
+            // Recharger les engines persistés (voir engine_cmds::save_engine,
+            // qui les écrit sous la même clé/format : objet indexé par id).
+            {
+                use tauri_plugin_store::StoreExt;
+                if let Ok(store) = app.store("tabulon.json") {
+                    if let Some(serde_json::Value::Object(by_id)) = store.get("engines") {
+                        let state = app.state::<AppState>();
+                        let mut engines = state.engines.lock().unwrap();
+                        for (_, v) in by_id {
+                            if let Ok(engine) = serde_json::from_value::<state::Engine>(v) {
+                                engines.push(engine);
+                            }
+                        }
+                    }
+                }
+            }
+
             let cli_matches = app.cli().matches()?;
             if !cli_matches.args.contains_key("no-autoupdate") {
                 #[cfg(not(debug_assertions))]
                 {
-                    let handle = app.handle().clone();
-                    tauri::async_runtime::spawn(async move {
-                        if let Err(e) = window_manager::check_update(handle).await {
-                            log::warn!("Update check failed: {e}");
-                        }
-                    });
+                    // Désactivé en même temps que le plugin updater (voir plus
+                    // haut) : check_update() appelle app.updater(), qui paniquerait
+                    // sans le plugin enregistré.
+                    // let handle = app.handle().clone();
+                    // tauri::async_runtime::spawn(async move {
+                    //     if let Err(e) = window_manager::check_update(handle).await {
+                    //         log::warn!("Update check failed: {e}");
+                    //     }
+                    // });
                 }
             }
             Ok(())
