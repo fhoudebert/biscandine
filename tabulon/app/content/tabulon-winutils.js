@@ -6,9 +6,7 @@
 // jbwu.init(title, header?)  →  twu.init(title, header?)
 // jbwu.ready()               →  twu.ready()
 
-import { platform }         from '@tauri-apps/plugin-os';
-import { getCurrentWindow } from '@tauri-apps/api/window';
-import { emit }             from '@tauri-apps/api/event';
+import { platform, getCurrentWindow, emit } from './tauri-bridge.js';
 
 const twu = {
 

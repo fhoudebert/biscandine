@@ -7,7 +7,7 @@
 
 import tCore        from './tabulon-core.js';
 import { JBMatch }  from './jb-match.js';
-import { listen }   from '@tauri-apps/api/event';
+import { listen } from '../content/tauri-bridge.js';
 
 // Registre des matchs vivants : id → JBMatch
 const matches = new Map();

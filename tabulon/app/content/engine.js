@@ -1,7 +1,7 @@
 // app/content/engine.js
 import tRpc        from './tabulon-rpc.js';
 import twu         from './tabulon-winutils.js';
-import { open }    from '@tauri-apps/plugin-shell';
+import { open } from './tauri-bridge.js';
 
 const engineTypes = {
     '':     { label: 'Choose engine type', order: 1, fields: [] },

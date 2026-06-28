@@ -1,9 +1,7 @@
 // app/content/hub.js  —  Fenêtre principale Tabulon
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
-import { open }   from '@tauri-apps/plugin-shell';
-import { Store }  from '@tauri-apps/plugin-store';
-import { listen } from '@tauri-apps/api/event';
+import { open, Store, listen } from './tauri-bridge.js';
 
 let store;
 let gameList = [], gamesMap = {};

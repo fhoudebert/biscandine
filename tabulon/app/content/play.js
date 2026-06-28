@@ -7,8 +7,7 @@
 
 import tRpc        from './tabulon-rpc.js';
 import twu         from './tabulon-winutils.js';
-import { Store }   from '@tauri-apps/plugin-store';
-import { listen, emit } from '@tauri-apps/api/event';
+import { Store, listen, emit } from './tauri-bridge.js';
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);

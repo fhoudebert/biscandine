@@ -1,9 +1,7 @@
 // app/content/camera-view.js
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
-import { open }   from '@tauri-apps/plugin-shell';
-import { message as dlgMessage, ask } from '@tauri-apps/plugin-dialog';
-import { Store }  from '@tauri-apps/plugin-store';
+import { open, message as dlgMessage, ask, Store } from './tauri-bridge.js';
 
 const gameName = (function () {
     const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);

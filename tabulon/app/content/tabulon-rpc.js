@@ -7,9 +7,7 @@
 //   2. Rust → renderer   : tRpc.listen({ eventName: handler })
 //   3. Fenêtre → fenêtre : via relay_to_window (côté Rust)
 
-import { invoke }           from '@tauri-apps/api/core';
-import { listen, emit }     from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke, listen, emit, getCurrentWindow } from './tauri-bridge.js';
 
 // ── Niveau de debug (0=off, 1=erreurs, 2=tout) ───────────────────────────────
 let debugLevel = 0;

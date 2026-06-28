@@ -6,11 +6,7 @@
 // Le "main process" de JoclyBoard est ici remplacé par ce module JS
 // qui tourne dans la fenêtre hub (main) et pilote toutes les autres.
 
-import { invoke }            from '@tauri-apps/api/core';
-import { emit, listen }      from '@tauri-apps/api/event';
-import { Store }             from '@tauri-apps/plugin-store';
-import { WebviewWindow }     from '@tauri-apps/api/webviewWindow';
-import { save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { invoke, emit, listen, Store, WebviewWindow, save as saveDialog } from './tauri-bridge.js';
 
 let _store = null;
 let _matchIdCounter = 0;

@@ -7,9 +7,7 @@
 //   await bridge.init();
 //   const matchId = await bridge.call('newMatch', 'classic-chess');
 
-import { invoke }            from '@tauri-apps/api/core';
-import { emit, listen }      from '@tauri-apps/api/event';
-import { Store }             from '@tauri-apps/plugin-store';
+import { invoke, emit, listen, Store } from '../content/tauri-bridge.js';
 
 let worker   = null;
 let store    = null;
@@ -199,9 +197,11 @@ async function init() {
     worker.port.start();
 
     // Injecter Jocly dans le worker (chargé via <script> tag dans hub.html)
-    // dist/ (build de jocly2 via gulp build) est copié à la racine de
-    // tabulon/, pas dans app/node_modules/ — voir README.md → installation.
-    const joclyUrl = new URL('../../dist/browser/jocly.js', import.meta.url).href;
+    // dist/ (build de jocly2 via gulp build) est fusionné à la racine de
+    // l'app via tauri.conf.json::build.frontendDist (liste ["../app", "../dist"]),
+    // donc son contenu (browser/...) est servi directement à la racine, sans
+    // préfixe "dist/" — voir README.md → installation.
+    const joclyUrl = new URL('../browser/jocly.js', import.meta.url).href;
     await workerCall('inject-jocly', joclyUrl);
 
     // Synchroniser le store avec le worker

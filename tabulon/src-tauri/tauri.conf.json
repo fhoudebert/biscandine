@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "fr.biscandine.tabulon",
   "build": {
-    "frontendDist": "../app"
+    "frontendDist": ["../app", "../dist"]
   },
   "app": {
     "withGlobalTauri": true,
