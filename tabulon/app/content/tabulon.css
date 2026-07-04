@@ -440,3 +440,96 @@ strong { font-weight: 600; }
 /* game-header et game-footer : hauteur auto, pas de flex-grow */
 .game-header { flex-shrink: 0; }
 .game-footer { flex-shrink: 0; }
+
+/* -- Selecteurs joueurs dans play.html -------------------------------------- */
+.player-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+}
+.player-select-label {
+  font-size: 11px;
+  font-weight: bold;
+  color: #666;
+}
+.player-select {
+  font-size: 11px;
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  max-width: 90px;
+}
+
+/* -- players.html ----------------------------------------------------------- */
+.players-container {
+  padding: 16px;
+}
+.players-headers,
+.players-forms {
+  display: flex;
+  gap: 16px;
+}
+.players-headers > div,
+.players-forms > div {
+  flex: 1;
+}
+.players-headers {
+  margin-bottom: 4px;
+}
+.players-container h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+}
+.players-container .form-control {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.players-container .form-group {
+  margin-top: 4px;
+}
+
+/* -- view-options.html ------------------------------------------------------ */
+.view-options {
+  padding: 16px;
+}
+.view-options .form-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  clear: both;
+}
+.view-options .form-group label {
+  min-width: 60px;
+  font-size: 13px;
+  color: #555;
+  float: none;
+}
+.view-options .form-group select {
+  flex: 1;
+  float: none;
+}
+.view-options .checkbox {
+  margin-bottom: 6px;
+  clear: both;
+}
+.view-options .checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+}
+.view-options .checkbox input[type=checkbox] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  cursor: pointer;
+}

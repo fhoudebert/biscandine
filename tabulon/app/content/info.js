@@ -1,6 +1,5 @@
 // app/content/info.js
 import twu  from './tabulon-winutils.js';
-import tRpc from './tabulon-rpc.js';
 import { open } from './tauri-bridge.js';
 
 const gameName = (function () {
@@ -28,17 +27,21 @@ async function GetHtml(config, what) {
     if (!htmlUrl) return;
 
     try {
-        // Tauri interdit fetch() vers file:// — on passe par la commande Rust read_text_file
-        const fullPath = config.view.fullPath + '/' + htmlUrl;
-        const text = await tRpc.call('read_text_file', fullPath);
+        const fullUrl = config.view.fullPath + '/' + htmlUrl;
+        console.info('[info] fetching', what, ':', fullUrl);
+        const resp = await fetch(fullUrl);
+        console.info('[info]', what, 'response:', resp.status, resp.ok);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const text = await resp.text();
+        console.info('[info]', what, 'text length:', text.length);
         const html = text.replace(/\{GAME\}/g, config.view.fullPath);
 
         const tab     = document.querySelector(`.tab-group .tab-item[data-tab="${what}"]`);
         const content = document.querySelector(`.window-content [data-tab="${what}"]`);
+        if (!tab || !content) { console.warn('[info] tab/content not found for', what); return; }
         tab.classList.remove('hidden');
         content.innerHTML = html;
 
-        // Intercepter les liens pour les ouvrir dans le navigateur système
         content.querySelectorAll('a[href]').forEach(a => {
             a.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -48,7 +51,7 @@ async function GetHtml(config, what) {
 
         DefaultTab();
     } catch (e) {
-        console.warn('GetHtml failed for', what, e);
+        console.warn('[info] GetHtml failed for', what, ':', e);
     }
 }
 

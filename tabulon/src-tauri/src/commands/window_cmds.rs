@@ -167,32 +167,6 @@ pub fn open_game(app: AppHandle, game_name: String) -> Result<(), String> {
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("editEngine", id?)  →  ouvre engine.html (création ou édition)
-#[tauri::command]
-pub fn edit_engine(app: AppHandle, state: tauri::State<crate::state::AppState>, id: Option<String>) -> Result<(), String> {
-    let engine_json = if let Some(ref eid) = id {
-        let engines = state.engines.lock().unwrap();
-        engines.iter()
-            .find(|e| &e.id == eid)
-            .map(|e| serde_json::to_string(e).unwrap_or_default())
-            .unwrap_or_default()
-    } else {
-        // Nouvel engine : générer un id unique
-        let new_id = format!("engine-{}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
-        serde_json::json!({ "id": new_id, "name": "", "game": "", "type": "" }).to_string()
-    };
-    let encoded = urlencoding::encode(&engine_json).to_string();
-    let label = id.as_deref().unwrap_or("new");
-    open_window(&app, WindowOptions {
-        label: &format!("engine-{label}"),
-        url:   &format!("content/engine.html?engine={encoded}"),
-        title: if id.is_some() { "Edit engine" } else { "New engine" },
-        width: 400.0, height: 420.0,
-        min_width: 300.0, min_height: 300.0,
-        persist_key: None,
-    }).map(|_| ()).map_err(|e| e.to_string())
-}
 
 /// Ouvre book-history.html pour visualiser un PJN chargé
 #[tauri::command]

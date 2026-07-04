@@ -1,105 +1,99 @@
 // app/content/view-options.js
+// Fenetre satellite : options de vue (skin, sons, notation, etc.)
+// Communique avec play.html via Tauri events (play-req/play-rep:{matchId}:*).
+
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
+import { listen, emit } from './tauri-bridge.js';
 
-const matchId = (function () {
-    const m = /\?.*\bid=([0-9]+)/.exec(window.location.href);
-    return m && m[1] || 0;
-})();
+const matchId = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
 
-let viewOptions;
-
-tRpc.listen({});
+let viewConfig = {};
 
 function supports3D() {
-    try {
-        return !!window.WebGLRenderingContext &&
-               !!document.createElement('canvas').getContext('experimental-webgl');
-    } catch { return false; }
+    try { return !!window.WebGLRenderingContext &&
+          !!document.createElement('canvas').getContext('experimental-webgl'); }
+    catch { return false; }
 }
 
-function FilterSkins(allSkins) {
-    return allSkins.filter(skin => supports3D() || !skin['3d']);
-}
+function ApplyOptions(data) {
+    const { options, config } = data;
+    viewConfig = config;
 
-function UpdateOptions(_viewOptions) {
-    viewOptions = _viewOptions;
-    const { options, config, players } = _viewOptions;
-
-    const skinSel  = document.querySelector('#skin select');
     const skinWrap = document.getElementById('skin');
-    const skins    = FilterSkins(config.skins || []);
-    skins.forEach(skin => {
-        const opt = document.createElement('option');
-        opt.value = skin.name; opt.textContent = skin.title;
-        skinSel.appendChild(opt);
-    });
-    skinWrap.classList.remove('hidden');
-    skinSel.value = skins.map(s => s.name).includes(options.skin)
-        ? options.skin : (skins[0]?.name);
+    const skinSel  = skinWrap?.querySelector('select');
+    if (skinSel && config.skins) {
+        skinSel.innerHTML = '';
+        config.skins.filter(s => supports3D() || !s['3d']).forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.name; opt.textContent = s.title;
+            skinSel.appendChild(opt);
+        });
+        skinWrap.classList.remove('hidden');
+        skinSel.value = options.skin || skinSel.options[0]?.value;
+    }
 
     const soundsWrap = document.getElementById('sounds');
-    soundsWrap.classList.remove('hidden');
-    soundsWrap.querySelector('input').checked = !!options.sounds;
+    soundsWrap?.classList.remove('hidden');
+    const soundsInput = soundsWrap?.querySelector('input');
+    if (soundsInput) soundsInput.checked = !!options.sounds;
 
+    const notationWrap = document.getElementById('notation');
     if (config.useNotation) {
-        const w = document.getElementById('notation');
-        w.classList.remove('hidden');
-        w.querySelector('input').checked = !!options.notation;
+        notationWrap?.classList.remove('hidden');
+        const inp = notationWrap?.querySelector('input');
+        if (inp) inp.checked = !!options.notation;
     }
+
+    const autoWrap = document.getElementById('autoComplete');
     if (config.useAutoComplete) {
-        const w = document.getElementById('autoComplete');
-        w.classList.remove('hidden');
-        w.querySelector('input').checked = !!options.autoComplete;
+        autoWrap?.classList.remove('hidden');
+        const inp = autoWrap?.querySelector('input');
+        if (inp) inp.checked = !!options.autoComplete;
     }
+
+    const showWrap = document.getElementById('showMoves');
     if (config.useShowMoves) {
-        const w = document.getElementById('showMoves');
-        w.classList.remove('hidden');
-        w.querySelector('input').checked = !!options.showMoves;
+        showWrap?.classList.remove('hidden');
+        const inp = showWrap?.querySelector('input');
+        if (inp) inp.checked = !!options.showMoves;
     }
-    if (config.switchable) {
-        const viewAsSel  = document.querySelector('#viewAs select');
-        const viewAsWrap = document.getElementById('viewAs');
-        [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach(who => {
-            const opt = document.createElement('option');
-            opt.value = who; opt.textContent = players[who].name;
-            viewAsSel.appendChild(opt);
-        });
-        viewAsWrap.classList.remove('hidden');
-        viewAsSel.value = options.viewAs;
-    }
+
     const anaWrap = document.getElementById('anaglyph');
-    anaWrap.classList.remove('hidden');
-    anaWrap.querySelector('input').checked = !!options.anaglyph;
+    anaWrap?.classList.remove('hidden');
+    const anaInput = anaWrap?.querySelector('input');
+    if (anaInput) anaInput.checked = !!options.anaglyph;
 }
 
-function SetViewOptions() {
-    const { config } = viewOptions;
-    const options = {
-        skin:     document.querySelector('#skin select').value,
-        sounds:   document.querySelector('#sounds input').checked,
-        anaglyph: document.querySelector('#anaglyph input').checked,
+function ReadOptions() {
+    const config = viewConfig;
+    const opts = {
+        skin:     document.querySelector('#skin select')?.value,
+        sounds:   !!document.querySelector('#sounds input')?.checked,
+        anaglyph: !!document.querySelector('#anaglyph input')?.checked,
     };
-    if (config.useNotation)     options.notation     = document.querySelector('#notation input').checked;
-    if (config.useAutoComplete) options.autoComplete = document.querySelector('#autoComplete input').checked;
-    if (config.useShowMoves)    options.showMoves    = document.querySelector('#showMoves input').checked;
-    if (config.switchable)      options.viewAs       = document.querySelector('#viewAs select').value;
-
-    // Envoyer au worker via la commande Rust set_view_options
-    // Le worker mettra à jour le match ET émettra setViewOptions vers play.html
-    tRpc.call('set_view_options', matchId, options);
+    if (config.useNotation)     opts.notation     = !!document.querySelector('#notation input')?.checked;
+    if (config.useAutoComplete) opts.autoComplete = !!document.querySelector('#autoComplete input')?.checked;
+    if (config.useShowMoves)    opts.showMoves    = !!document.querySelector('#showMoves input')?.checked;
+    return opts;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await twu.init(`View Options #${matchId}`);
+    await twu.init('View Options #' + matchId);
 
-    // Récupérer les infos de vue depuis le worker (via Rust → worker)
-    tRpc.call('get_view_info', matchId)
-        .then(UpdateOptions)
-        .then(() => {
-            document.querySelector('.view-options').addEventListener('change', SetViewOptions);
-            return twu.ready();
-        });
+    // Recevoir la reponse de play.html
+    listen('play-rep:' + matchId + ':get-view-options', ({ payload }) => {
+        ApplyOptions(payload);
+        twu.ready();
+    });
 
-    document.getElementById('button-close').addEventListener('click', () => tRpc.close());
+    // Appliquer immediatement chaque changement
+    document.querySelector('.view-options')?.addEventListener('change', () => {
+        emit('play-req:' + matchId + ':set-view-options', ReadOptions());
+    });
+
+    document.getElementById('button-close')?.addEventListener('click', () => tRpc.close());
+
+    // Demander les options actuelles a play.html
+    await emit('play-req:' + matchId + ':get-view-options', null);
 });

@@ -5,7 +5,7 @@ import { open, Store, listen } from './tauri-bridge.js';
 
 let store;
 let gameList = [], gamesMap = {};
-let allGameList = [], favGameList = [], templateList = [], engineList = [];
+let allGameList = [], favGameList = [], templateList = [];
 let filterTimer = null;
 let appInfo = { name: 'Tabulon', version: '', homepage: '' };
 
@@ -108,35 +108,6 @@ function UpdateTemplateList() {
     });
 }
 
-// ── Engines ───────────────────────────────────────────────────────────────────
-async function UpdateEngines(engines) {
-    engines = engines || await store.get('engines') || {};
-    engineList = Object.values(engines).sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
-}
-
-function UpdateEngineList() {
-    const ul = document.getElementById('engine-list');
-    ul.querySelectorAll('.list-group-item').forEach(el => el.remove());
-    engineList.forEach(engine => {
-        const game = gamesMap[engine.game] || {};
-        const li = document.createElement('li');
-        li.className = 'list-group-item object-list-item';
-        li.dataset.engine = engine.id;
-        li.innerHTML = `
-            <img class="media-object pull-left" src="${game.thumbnail || ''}" width="48" height="48"/>
-            <div class="media-body"><strong>${engine.name}</strong></div>
-            <div title="Remove" class="media-object pull-right list-shortcut list-shortcut-del">
-                <span class="icon icon-cancel"></span>
-            </div>`;
-        li.addEventListener('click', () => tRpc.call('edit_engine', engine.id));
-        li.querySelector('.list-shortcut').addEventListener('click', (e) => {
-            e.stopPropagation();
-            tRpc.call('remove_engine', engine.id);
-        });
-        ul.appendChild(li);
-    });
-}
-
 // ── About ─────────────────────────────────────────────────────────────────────
 function RenderAbout() {
     document.querySelectorAll('.appName').forEach(el => el.textContent = appInfo.name);
@@ -195,10 +166,6 @@ tRpc.listen({
         await UpdateTemplates(templates);
         if (await store.get('nav-last') === 'templates') UpdateTemplateList();
     },
-    updateEngines: async (engines) => {
-        await UpdateEngines(engines);
-        if (await store.get('nav-last') === 'engines') UpdateEngineList();
-    },
     // update-available vient du plugin updater
 });
 
@@ -223,18 +190,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         SetNav('templates'); document.getElementById('template-list').style.display = '';
         await UpdateTemplates(); UpdateTemplateList();
     });
-    document.getElementById('nav-engines').addEventListener('click', async () => {
-        SetNav('engines'); document.getElementById('engine-list').style.display = '';
-        await UpdateEngines(); UpdateEngineList();
-    });
     document.getElementById('nav-about').addEventListener('click', () => {
         SetNav('about'); document.getElementById('about').style.display = '';
         RenderAbout();
     });
 
     document.getElementById('gamefilter').addEventListener('input', Filter);
-    document.querySelector('#engine-list .list-group-header')
-        .addEventListener('click', () => tRpc.call('edit_engine', null));
 
     console.info('[hub] calling ListGames()');
     await ListGames();
