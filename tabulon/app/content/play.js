@@ -21,13 +21,21 @@ const viewOptionsFromUrl = (() => {
         return raw ? JSON.parse(decodeURIComponent(raw)) : null;
     } catch { return null; }
 })();
+// Config horloge transmise par clock-setup.js via new_match(gameName, clock)
+const clockConfig = (() => {
+    try {
+        const raw = new URLSearchParams(window.location.search).get('clock');
+        return raw ? JSON.parse(decodeURIComponent(raw)) : null;
+    } catch { return null; }
+})();
+// ID de la partie dont on fork la position (store key "fork:{forkId}")
+const forkId = new URLSearchParams(window.location.search).get('fork') || null;
 
 // -- Etat ---------------------------------------------------------------------
 let joclyMatch   = null;
 let store        = null;
 let loopActive   = false;
 let paused       = false;
-let videoRecording = null;
 let levels       = [];
 
 // Joueurs : null = humain, sinon objet level Jocly
@@ -154,29 +162,6 @@ function BuildPlayerSelect(selectId, playerKey) {
         await joclyMatch?.abortUserTurn().catch(() => {});
         await joclyMatch?.abortMachineSearch().catch(() => {});
     });
-}
-
-// -- Video --------------------------------------------------------------------
-function RecordFrame() {
-    if (!videoRecording || !joclyMatch) return;
-    joclyMatch.viewControl('takeSnapshot', { format: 'jpeg' })
-        .then(snapshot => tRpc.call('record_frame', matchId, snapshot))
-        .catch(() => {});
-}
-function StopRecording() {
-    if (!videoRecording) return;
-    clearInterval(videoRecording);
-    videoRecording = null;
-    tRpc.call('stop_recording', matchId).catch(() => {});
-    document.getElementById('button-stop-video').classList.add('hidden');
-}
-function StartRecording() {
-    tRpc.call('start_recording', matchId)
-        .then(() => {
-            document.getElementById('button-stop-video').classList.remove('hidden');
-            videoRecording = setInterval(RecordFrame, 1000 / 30);
-        })
-        .catch(e => console.warn('[play] StartRecording error:', e));
 }
 
 // -- Communication avec les fenetres satellites --------------------------------
@@ -308,11 +293,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     btn('button-options',  () => tRpc.call('open_view_options', matchId));
     btn('button-help',     () => tRpc.call('open_info', gameName));
     btn('button-template', () => tRpc.call('open_save_template', matchId));
-    btn('button-clone',    () => tRpc.call('new_match', gameName));
+    btn('button-clone', async () => {
+        if (!joclyMatch) return;
+        // Sauvegarder la position courante dans le store sous une cle
+        // ephemere, que le nouveau play.html lira et chargera au demarrage.
+        const saveData = await joclyMatch.save().catch(() => null);
+        if (saveData) {
+            await store?.set('fork:' + matchId, saveData);
+        }
+        await tRpc.call('new_match', gameName, null, matchId);
+    });
     btn('button-camera',   () => tRpc.call('open_camera_view', matchId, gameName));
-    btn('button-moves',    () => tRpc.call('open_moves', matchId));
-    btn('button-stop-video', StopRecording);
-    btn('button-video',    StartRecording);
 
     btn('button-takeback', async () => {
         if (!joclyMatch) return;
@@ -422,8 +413,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const gameArea = document.querySelector('.game-area');
     if (!gameArea) throw new Error('[play] .game-area not found in DOM');
 
-    await joclyMatch.attachElement(gameArea, { viewOptions });
-    console.info('[play] element attached, starting game loop');
+    const attachOptions = { viewOptions };
+    if (clockConfig) attachOptions.clock = clockConfig;
+    await joclyMatch.attachElement(gameArea, attachOptions);
+    console.info('[play] element attached', clockConfig ? '(with clock)' : '', forkId ? '(fork)' : '');
+
+    // Si fork : charger la position sauvegardee par la fenetre parente
+    if (forkId) {
+        const saveData = await store?.get('fork:' + forkId).catch(() => null);
+        if (saveData) {
+            await joclyMatch.load(saveData).catch(e => console.warn('[play] fork load failed:', e));
+            store?.delete('fork:' + forkId).catch(() => {});
+        }
+    }
 
     // Câblage des fenêtres satellites : elles envoient des events Tauri
     // vers play.html pour lire/modifier l'état du match (view options, players,

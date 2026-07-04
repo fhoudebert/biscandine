@@ -50,14 +50,14 @@ function GetClock() {
     const clock = { mode: 'countdown' };
     const symmetry = document.querySelector('.symmetry').value;
     try {
+        // PLAYER_A=1, PLAYER_B=-1 (constantes Jocly, pas besoin que Jocly soit charge)
         if (symmetry === 'same') {
             const g = document.querySelector('.group-same');
-            clock[Jocly.PLAYER_A] = clock[Jocly.PLAYER_B] = GetTiming(g);
-            clock['xtrasec_' + Jocly.PLAYER_A] = clock['xtrasec_' + Jocly.PLAYER_B] = parseInt(g.querySelector('input.xtrasec').value) || 0;
-            clock['mps_' + Jocly.PLAYER_A]     = clock['mps_' + Jocly.PLAYER_B]     = parseInt(g.querySelector('input.mps').value)    || 0;
+            clock[1] = clock[-1] = GetTiming(g);
+            clock['xtrasec_1'] = clock['xtrasec_-1'] = parseInt(g.querySelector('input.xtrasec').value) || 0;
+            clock['mps_1']     = clock['mps_-1']     = parseInt(g.querySelector('input.mps').value)    || 0;
         } else {
-            [0, 1].forEach((which) => {
-                const player = which === 0 ? Jocly.PLAYER_A : Jocly.PLAYER_B;
+            [[0, 1], [1, -1]].forEach(([which, player]) => {
                 const g = document.querySelector(`.group-different.player${which}`);
                 clock[player]                  = GetTiming(g);
                 clock['xtrasec_' + player]     = parseInt(g.querySelector('input.xtrasec').value) || 0;

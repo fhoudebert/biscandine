@@ -97,7 +97,7 @@ const tRpc = {
 function buildPayload(method, args) {
   const map = {
     // match lifecycle
-    new_match:           ([gameName])              => ({ gameName }),
+    new_match:           ([gameName, clock, forkId]) => ({ gameName, clock: clock || null, forkId: forkId || null }),
     new_clocked_match:   ([gameName])              => ({ gameName }),
     clone_match:         ([matchId])               => ({ matchId }),
     load_match:          ([matchId, data])         => ({ matchId, data }),
@@ -131,6 +131,7 @@ function buildPayload(method, args) {
     open_camera_view:    ([matchId, gameName])     => ({ matchId, gameName }),
     open_save_template:  ([matchId])               => ({ matchId }),
     open_info:           ([gameName])              => ({ gameName }),
+    open_clock_setup:    ([gameName])              => ({ gameName }),
     open_board_state:    ([gameName, matchId])     => ({ gameName, matchId }),
     open_book:           ([gameName, fn_, data])   => ({ gameName, fileName: fn_, data }),
     open_book_match:     ([gameName, match_])      => ({ gameName, bookMatch: match_ }),

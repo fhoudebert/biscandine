@@ -17,7 +17,7 @@ function TabSelected(what) {
 function DefaultTab() {
     for (const t of ['rules', 'description', 'credits']) {
         const tab = document.querySelector(`.tab-group .tab-item[data-tab="${t}"]`);
-        if (tab && !tab.classList.contains('hidden')) { TabSelected(t); return; }
+        if (tab && tab.style.display !== 'none') { TabSelected(t); return; }
     }
 }
 
@@ -28,18 +28,15 @@ async function GetHtml(config, what) {
 
     try {
         const fullUrl = config.view.fullPath + '/' + htmlUrl;
-        console.info('[info] fetching', what, ':', fullUrl);
         const resp = await fetch(fullUrl);
-        console.info('[info]', what, 'response:', resp.status, resp.ok);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const text = await resp.text();
-        console.info('[info]', what, 'text length:', text.length);
         const html = text.replace(/\{GAME\}/g, config.view.fullPath);
 
         const tab     = document.querySelector(`.tab-group .tab-item[data-tab="${what}"]`);
         const content = document.querySelector(`.window-content [data-tab="${what}"]`);
-        if (!tab || !content) { console.warn('[info] tab/content not found for', what); return; }
-        tab.classList.remove('hidden');
+        if (!tab || !content) return;
+        tab.style.removeProperty('display');   // rendre l'onglet visible
         content.innerHTML = html;
 
         content.querySelectorAll('a[href]').forEach(a => {

@@ -57,7 +57,7 @@ async function SetupInfo(config) {
         UpdateFavorite();
     });
     document.getElementById('quickplay').addEventListener('click',   () => tRpc.call('new_match', gameName));
-    document.getElementById('clockedplay').addEventListener('click', () => tRpc.call('new_clocked_match', gameName));
+    document.getElementById('clockedplay').addEventListener('click', () => tRpc.call('open_clock_setup', gameName));
     document.getElementById('info').addEventListener('click',        () => tRpc.call('open_info', gameName));
     document.getElementById('boardstate').addEventListener('click',  () => tRpc.call('open_board_state', gameName));
 

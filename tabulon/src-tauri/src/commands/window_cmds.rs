@@ -3,6 +3,21 @@
 // Remplace les appels rpc.call("openXxx", matchId) depuis les renderers.
 // Chaque commande ouvre (ou focus) la fenêtre secondaire correspondante.
 
+/// rpc.call("openClockSetup", gameName) — ouvre la config horloge avant la partie.
+/// clock-setup.js appellera ensuite new_match(gameName, clock) pour lancer la partie.
+#[tauri::command]
+pub fn open_clock_setup(app: AppHandle, game_name: String) -> Result<(), String> {
+    use crate::window_manager::WindowOptions;
+    open_window(&app, WindowOptions {
+        label: &format!("clock-setup-{game_name}"),
+        url:   &format!("content/clock-setup.html?game={game_name}"),
+        title: &format!("{game_name} Clock Setup"),
+        width: 360.0, height: 500.0,
+        min_width: 300.0, min_height: 400.0,
+        persist_key: None,
+    }).map(|_| ()).map_err(|e| e.to_string())
+}
+
 use crate::window_manager::{open_window, WindowOptions};
 use tauri::{AppHandle, Emitter};
 use serde_json::Value;

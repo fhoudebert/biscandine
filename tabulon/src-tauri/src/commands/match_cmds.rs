@@ -28,6 +28,8 @@ pub fn new_match(
     app: AppHandle,
     state: State<AppState>,
     game_name: String,
+    clock: Option<Value>,
+    fork_id: Option<u32>,
 ) -> Result<u32, String> {
     let id = state.next_match_id
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -43,9 +45,19 @@ pub fn new_match(
         });
     }
 
+    let clock_param = clock
+        .map(|c| format!("&clock={}", urlencoding::encode(&c.to_string())))
+        .unwrap_or_default();
+
+    // Si fork_id est fourni, le nouveau play.html chargera la position
+    // sauvegardee dans le store sous la cle "fork:{fork_id}".
+    let fork_param = fork_id
+        .map(|fid| format!("&fork={fid}"))
+        .unwrap_or_default();
+
     open_window(&app, WindowOptions {
         label:     &format!("play-{id}"),
-        url:       &format!("content/play.html?game={game_name}&id={id}"),
+        url:       &format!("content/play.html?game={game_name}&id={id}{clock_param}{fork_param}"),
         title:     &game_name,
         width:     700.0, height: 630.0,
         min_width: 400.0, min_height: 400.0,
