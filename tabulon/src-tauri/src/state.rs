@@ -54,8 +54,18 @@ pub struct Engine {
 }
 
 /// État partagé de l'application, géré par Tauri (`.manage(AppState::default())`).
-#[derive(Default)]
 pub struct AppState {
     pub matches: Mutex<HashMap<u32, Match>>,
     pub engines: Mutex<Vec<Engine>>,
+    pub next_match_id: std::sync::atomic::AtomicU32,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            matches: Mutex::new(HashMap::new()),
+            engines: Mutex::new(Vec::new()),
+            next_match_id: std::sync::atomic::AtomicU32::new(1),
+        }
+    }
 }

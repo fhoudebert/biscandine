@@ -203,9 +203,13 @@ tRpc.listen({
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+
 document.addEventListener('DOMContentLoaded', async () => {
+    console.info('[hub] DOMContentLoaded — start');
     store   = await Store.load('tabulon.json');
+    console.info('[hub] store loaded');
     appInfo = await tRpc.call('get_app_info');
+    console.info('[hub] app info loaded:', appInfo);
 
     document.getElementById('nav-games-all').addEventListener('click', async () => {
         SetNav('games-all'); document.getElementById('game-list-pane').style.display = '';
@@ -232,7 +236,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelector('#engine-list .list-group-header')
         .addEventListener('click', () => tRpc.call('edit_engine', null));
 
+    console.info('[hub] calling ListGames()');
     await ListGames();
+    console.info('[hub] ListGames() done — allGameList has', allGameList.length, 'games');
     RenderAbout();
     await twu.init(appInfo.name + ' ' + appInfo.version);
     twu.ready();

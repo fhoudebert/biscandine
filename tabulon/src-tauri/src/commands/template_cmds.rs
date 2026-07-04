@@ -1,38 +1,65 @@
 // src-tauri/src/commands/template_cmds.rs
 //
 // Templates de partie (joueurs + horloge + options de vue sauvegardés sous un
-// nom). La logique et le stockage vivent entièrement côté SharedWorker
-// (controller.isTemplateNameValid / saveTemplate / playTemplate /
-// removeTemplate dans match-worker.js, qui lit/écrit le store via le hub) :
-// Rust ne fait que relayer via dispatch_to_worker(), comme pour match_cmds.rs.
+// nom). Le SharedWorker ayant été supprimé (Jocly tourne directement dans
+// chaque fenêtre play.html), les templates sont maintenant gérés directement
+// via le store Tauri côté Rust, comme les favoris dans match_cmds.rs.
+//
+// TODO : save_template doit recevoir les données à sauvegarder depuis play.js
+// plutôt que d'essayer de lire l'état d'un match côté Rust — à câbler quand
+// la fenêtre save-template.html sera connectée au nouveau flow.
 
-use crate::commands::match_cmds::dispatch_to_worker;
 use serde_json::Value;
 use tauri::AppHandle;
+use tauri_plugin_store::StoreExt;
 
-/// rpc.call("isTemplateNameValid", name)
-/// Délégué au worker car l'unicité du nom ne peut être vérifiée que là où
-/// vit la liste des templates existants (le store, lu par le worker).
 #[tauri::command]
-pub async fn is_template_name_valid(app: AppHandle, name: String) -> Result<bool, String> {
-    let result = dispatch_to_worker(&app, "isTemplateNameValid", serde_json::json!([name])).await?;
-    Ok(result.as_bool().unwrap_or(false))
+pub fn is_template_name_valid(app: AppHandle, name: String) -> Result<bool, String> {
+    let store = app.store("tabulon.json").map_err(|e| e.to_string())?;
+    let templates = store.get("templates")
+        .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
+        .unwrap_or_default();
+    // Un nom est valide s'il n'est pas déjà pris
+    Ok(!templates.contains_key(&name))
 }
 
-/// rpc.call("saveTemplate", matchId, name)
 #[tauri::command]
-pub async fn save_template(app: AppHandle, match_id: u32, name: String) -> Result<Value, String> {
-    dispatch_to_worker(&app, "saveTemplate", serde_json::json!([match_id, name])).await
+pub fn save_template(
+    app: AppHandle,
+    match_id: u32,
+    name: String,
+    data: Option<Value>,
+) -> Result<(), String> {
+    let store = app.store("tabulon.json").map_err(|e| e.to_string())?;
+    let mut templates = store.get("templates")
+        .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
+        .unwrap_or_default();
+    templates.insert(name, data.unwrap_or(serde_json::json!({ "matchId": match_id })));
+    store.set("templates", Value::Object(templates));
+    store.save().map_err(|e| e.to_string())
 }
 
-/// rpc.call("playTemplate", templateName)
 #[tauri::command]
-pub async fn play_template(app: AppHandle, template_name: String) -> Result<Value, String> {
-    dispatch_to_worker(&app, "playTemplate", serde_json::json!([template_name])).await
+pub fn play_template(
+    app: AppHandle,
+    template_name: String,
+) -> Result<Value, String> {
+    let store = app.store("tabulon.json").map_err(|e| e.to_string())?;
+    let templates = store.get("templates")
+        .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
+        .unwrap_or_default();
+    templates.get(&template_name)
+        .cloned()
+        .ok_or_else(|| format!("Template not found: {template_name}"))
 }
 
-/// rpc.call("removeTemplate", templateName)
 #[tauri::command]
-pub async fn remove_template(app: AppHandle, template_name: String) -> Result<Value, String> {
-    dispatch_to_worker(&app, "removeTemplate", serde_json::json!([template_name])).await
+pub fn remove_template(app: AppHandle, template_name: String) -> Result<(), String> {
+    let store = app.store("tabulon.json").map_err(|e| e.to_string())?;
+    let mut templates = store.get("templates")
+        .and_then(|v| if let Value::Object(m) = v { Some(m) } else { None })
+        .unwrap_or_default();
+    templates.remove(&template_name);
+    store.set("templates", Value::Object(templates));
+    store.save().map_err(|e| e.to_string())
 }

@@ -116,26 +116,29 @@ pub fn open_board_state(app: AppHandle, game_name: String, match_id: Option<u32>
     }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("openBook", gameName, fileName, data) — délègue à controller.openBook
-/// côté worker, qui parse le PJN/PGN/PDN (via PJNParser.js) et ouvre lui-même
-/// book.html une fois les parties extraites (events "book-ready"/"book-error",
-/// voir worker-bridge.js::handleWorkerEvent). Rust n'ouvre pas la fenêtre ici :
-/// le faire en plus aurait créé une fenêtre vide avant que le worker ne la
-/// peuple, ou un doublon si le worker l'ouvre séparément.
+/// rpc.call("openBook", gameName, fileName, data)
+/// Le parsing PJN/PGN/PDN était assuré par le worker (supprimé).
+/// Pour l'instant : ouvre book.html directement sans données parsées.
+/// TODO : implémenter le parsing côté Rust ou côté JS dans book.html.
 #[tauri::command]
-pub async fn open_book(app: AppHandle, game_name: String, file_name: String, data: String) -> Result<Value, String> {
-    crate::commands::match_cmds::dispatch_to_worker(
-        &app, "openBook", serde_json::json!([game_name, file_name, data]),
-    ).await
+pub fn open_book(app: AppHandle, game_name: String, file_name: String, _data: String) -> Result<(), String> {
+    use crate::window_manager::WindowOptions;
+    open_window(&app, WindowOptions {
+        label: &format!("book-{game_name}"),
+        url:   &format!("content/book.html?game={game_name}&file={}", urlencoding::encode(&file_name)),
+        title: &format!("{game_name} Book"),
+        width: 300.0, height: 450.0, min_width: 200.0, min_height: 250.0,
+        persist_key: Some(format!("window:book-{game_name}")),
+    }).map(|_| ()).map_err(|e| e.to_string())
 }
 
-/// rpc.call("openBookMatch", gameName, match) — délègue à controller.openBookMatch
-/// côté worker (crée un JBMatch, affiche le plateau, ouvre book-history.html).
+/// rpc.call("openBookMatch", gameName, match)
+/// Stub non fonctionnel sans worker — à réimplémenter quand le parsing PJN
+/// sera disponible côté Rust ou côté JS dans book.html.
 #[tauri::command]
-pub async fn open_book_match(app: AppHandle, game_name: String, book_match: Value) -> Result<Value, String> {
-    crate::commands::match_cmds::dispatch_to_worker(
-        &app, "openBookMatch", serde_json::json!([game_name, book_match]),
-    ).await
+pub fn open_book_match(_app: AppHandle, game_name: String, _book_match: serde_json::Value) -> Result<(), String> {
+    log::warn!("openBookMatch not implemented without worker (game: {game_name})");
+    Ok(())
 }
 
 /// rpc.call("openMoves", matchId)

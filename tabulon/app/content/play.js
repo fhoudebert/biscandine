@@ -1,118 +1,92 @@
-// app/content/play.js  —  Fenêtre de jeu principale
+// app/content/play.js  —  Fenêtre de jeu Tabulon
 //
-// Rôle : afficher le plateau Jocly et répondre aux events du contrôleur.
-// Le contrôleur (jb-controller.js dans hub.html) pilote la boucle de jeu ;
-// play.js reçoit humanTurn/aiTurn/playMove/display via tCore.emit() qui
-// passe par relay_to_window (Rust) et répond via "rpc-reply:<token>".
+// Architecture simplifiée (voir ARCHITECTURE.md) : Jocly tourne directement
+// dans cette fenêtre via window.Jocly (chargé par <script src="../browser/jocly.js">
+// dans play.html). Pas de SharedWorker, pas de protocol token/reply vers Rust.
+// Chaque fenêtre play.html est autonome et peut coexister avec d'autres instances.
+//
+// Boucle de jeu :
+//   createMatch → attachElement → loop { userTurn → playMove } → fin
+// Les boutons (takeback, restart, save/load…) agissent directement sur joclyMatch.
 
-import tRpc        from './tabulon-rpc.js';
-import twu         from './tabulon-winutils.js';
-import { Store, listen, emit } from './tauri-bridge.js';
+import tRpc from './tabulon-rpc.js';
+import twu  from './tabulon-winutils.js';
+import { Store } from './tauri-bridge.js';
 
-const gameName = (function () {
-    const m = /\?.*\bgame=([^&]+)/.exec(window.location.href);
-    return m && m[1] || 'classic-chess';
-})();
-const matchId = (function () {
-    const m = /\?.*\bid=([0-9]+)/.exec(window.location.href);
-    return m && parseInt(m[1]) || 0;
-})();
-const viewOptionsFromUrl = (function () {
-    const m = /\?.*\boptions=([^&]+)/.exec(window.location.href);
-    try { return m && m[1] && JSON.parse(decodeURIComponent(m[1])) || null; }
-    catch { return null; }
+// ── Paramètres d'URL ──────────────────────────────────────────────────────────
+const gameName = new URLSearchParams(window.location.search).get('game') || 'classic-chess';
+const matchId  = parseInt(new URLSearchParams(window.location.search).get('id') || '0', 10);
+const viewOptionsFromUrl = (() => {
+    try {
+        const raw = new URLSearchParams(window.location.search).get('options');
+        return raw ? JSON.parse(decodeURIComponent(raw)) : null;
+    } catch { return null; }
 })();
 
-let joclyMatch, store;
+// ── État ──────────────────────────────────────────────────────────────────────
+let joclyMatch = null;
+let store      = null;
+let loopActive = false;     // true tant que la boucle de jeu tourne
+let paused     = false;
 let videoRecording = null;
 
-// ── Cleanup entre les tours ────────────────────────────────────────────────────
-async function cleanup() {
-    if (!joclyMatch) return;
-    await joclyMatch.abortUserTurn().catch(() => {});
-    await joclyMatch.abortMachineSearch().catch(() => {});
-    await joclyMatch.resetView(true).catch(() => {});
+// ── Boucle de jeu ─────────────────────────────────────────────────────────────
+// Humain vs Humain uniquement pour l'instant.
+// machineSearch sera ajouté quand la gestion des joueurs sera câblée.
+async function gameLoop() {
+    loopActive = true;
+    console.info('[play] gameLoop started');
+    try {
+        while (loopActive) {
+            if (paused) {
+                await new Promise(r => setTimeout(r, 200));
+                continue;
+            }
+
+            let result;
+            try {
+                // userTurn() attend le coup de l'utilisateur, l'applique en
+                // interne (PlayMove + DisplayBoard), et retourne
+                // { move, finished, winner }. Il ne faut PAS appeler
+                // playMove() après — le coup est déjà joué.
+                result = await joclyMatch.userTurn();
+            } catch (e) {
+                // userTurn() est rejeté si abortUserTurn() est appelé
+                // (takeback, restart…) — on recommence la boucle normalement.
+                console.info('[play] userTurn aborted:', e.message);
+                continue;
+            }
+
+            console.info('[play] move played, finished:', result?.finished, 'winner:', result?.winner);
+
+            if (result?.finished) {
+                const w = result.winner;
+                UpdateFooter(w === 0 ? 'Draw'
+                    : w > 0 ? 'Player A wins'
+                    : 'Player B wins');
+                loopActive = false;
+            }
+        }
+    } catch (e) {
+        console.error('[play] gameLoop error:', e);
+    }
+    console.info('[play] gameLoop ended');
 }
 
-// ── Protocol tCore.emit() → reply ────────────────────────────────────────────
-// jb-controller.js appelle tCore.emit(label, event, payload) qui :
-//   1. invoke('relay_to_window', { target: label, event, payload: { payload, token } })
-//   2. attend l'event Tauri "rpc-reply:<token>"
-// Ce renderer reçoit l'event, traite, et émet "rpc-reply:<token>".
-tRpc.listen({
+// ── Helpers UI ────────────────────────────────────────────────────────────────
+function UpdateFooter(text) {
+    const el = document.getElementById('board-footer-text');
+    if (el) el.textContent = text || '';
+}
 
-    humanTurn: async ({ payload: data, token }) => {
-        if (!joclyMatch) { await _reply(token, null, 'match not ready'); return; }
-        try {
-            await cleanup();
-            await joclyMatch.load(data.gameData);
-            const result = await joclyMatch.userTurn();
-            await _reply(token, result);
-        } catch (e) { await _reply(token, null, e.message); }
-    },
+function UpdatePause() {
+    document.getElementById('button-pause').style.display  = paused ? 'none' : '';
+    document.getElementById('button-resume').style.display = paused ? '' : 'none';
+}
 
-    aiTurn: async ({ payload: data, token }) => {
-        if (!joclyMatch) { await _reply(token, null, 'match not ready'); return; }
-        try {
-            await cleanup();
-            await joclyMatch.load(data.gameData);
-            const r = await joclyMatch.machineSearch({ level: data.level });
-            await joclyMatch.playMove(r.move);
-            await _reply(token, r);
-        } catch (e) { await _reply(token, null, e.message); }
-    },
-
-    playMove: async ({ payload: data, token }) => {
-        if (!joclyMatch) { await _reply(token, null, 'match not ready'); return; }
-        try {
-            await cleanup();
-            await joclyMatch.load(data.gameData);
-            const res = await joclyMatch.playMove(data.move);
-            await _reply(token, { move: data.move, ...res });
-        } catch (e) { await _reply(token, null, e.message); }
-    },
-
-    display: async ({ payload: data, token }) => {
-        if (!joclyMatch) { await _reply(token, {}); return; }
-        try {
-            await cleanup();
-            await joclyMatch.load(data.gameData);
-            await _reply(token, {});
-        } catch (e) { await _reply(token, null, e.message); }
-    },
-
-    setViewOptions: async ({ payload: options, token }) => {
-        try {
-            if (joclyMatch) {
-                await cleanup();
-                await joclyMatch.setViewOptions(options);
-            }
-            await _reply(token, {});
-        } catch (e) { await _reply(token, null, e.message); }
-    },
-
-    setFooterText: ({ payload: text }) => {
-        document.getElementById('board-footer-text').textContent = text || '';
-    },
-
-    getCamera: async ({ token }) => {
-        try {
-            const camera = joclyMatch ? await joclyMatch.viewControl('getCamera') : null;
-            await _reply(token, camera);
-        } catch (e) { await _reply(token, null, e.message); }
-    },
-
-    setCamera: async ({ payload: details, token }) => {
-        try {
-            if (joclyMatch) await joclyMatch.viewControl('setCamera', details);
-            await _reply(token, {});
-        } catch (e) { await _reply(token, null, e.message); }
-    },
-});
-
-async function _reply(token, result, error) {
-    if (!token) return;
-    await emit('rpc-reply:' + token, error ? { error } : { result });
+function UpdateFav(fav) {
+    document.getElementById('button-favorite-no').style.display  = fav ? 'none' : '';
+    document.getElementById('button-favorite-yes').style.display = fav ? '' : 'none';
 }
 
 // ── Vidéo ─────────────────────────────────────────────────────────────────────
@@ -122,68 +96,96 @@ function RecordFrame() {
         .then(snapshot => tRpc.call('record_frame', matchId, snapshot))
         .catch(() => {});
 }
-
 function StopRecording() {
-    if (videoRecording) {
-        clearInterval(videoRecording);
-        videoRecording = null;
-        tRpc.call('stop_recording', matchId).catch(() => {});
-        document.getElementById('button-stop-video').classList.add('hidden');
-    }
+    if (!videoRecording) return;
+    clearInterval(videoRecording);
+    videoRecording = null;
+    tRpc.call('stop_recording', matchId).catch(() => {});
+    document.getElementById('button-stop-video').classList.add('hidden');
 }
-
 function StartRecording() {
     tRpc.call('start_recording', matchId)
         .then(() => {
             document.getElementById('button-stop-video').classList.remove('hidden');
             videoRecording = setInterval(RecordFrame, 1000 / 30);
         })
-        .catch(e => console.warn('StartRecording error:', e));
+        .catch(e => console.warn('[play] StartRecording error:', e));
 }
 
 // ── DOMContentLoaded ──────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+    console.info('[play] DOMContentLoaded, game:', gameName, 'id:', matchId);
     store = await Store.load('tabulon.json');
 
+    // ── Titre de la fenêtre ───────────────────────────────────────────────────
     const config = await Jocly.getGameConfig(gameName);
     await twu.init(config.model['title-en'] + ' #' + matchId, '.game-header');
 
-    // Favoris
-    const btnFavNo  = document.getElementById('button-favorite-no');
-    const btnFavYes = document.getElementById('button-favorite-yes');
-    function UpdateFav(fav) {
-        btnFavNo.style.display  = fav ? 'none' : '';
-        btnFavYes.style.display = fav ? '' : 'none';
-    }
-    tRpc.call('is_favorite', gameName).then(UpdateFav);
-    btnFavNo.addEventListener('click',  () => tRpc.call('set_favorite', gameName, true).then(() => UpdateFav(true)));
-    btnFavYes.addEventListener('click', () => tRpc.call('set_favorite', gameName, false).then(() => UpdateFav(false)));
+    // ── Favoris ───────────────────────────────────────────────────────────────
+    tRpc.call('is_favorite', gameName).then(UpdateFav).catch(() => {});
+    document.getElementById('button-favorite-no')
+        .addEventListener('click', () =>
+            tRpc.call('set_favorite', gameName, true).then(() => UpdateFav(true)));
+    document.getElementById('button-favorite-yes')
+        .addEventListener('click', () =>
+            tRpc.call('set_favorite', gameName, false).then(() => UpdateFav(false)));
 
-    // Plein écran
-    document.getElementById('button-fullscreen').addEventListener('click', () => {
-        document.querySelector('.game-area').webkitRequestFullscreen?.();
+    // ── Plein écran ───────────────────────────────────────────────────────────
+    document.getElementById('button-fullscreen')
+        .addEventListener('click', () =>
+            document.querySelector('.game-area').webkitRequestFullscreen?.());
+
+    // ── Fenêtres satellites (ouvertes via Rust, pas de logique ici) ───────────
+    const btn = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
+    btn('button-history',  () => tRpc.call('open_history', matchId));
+    btn('button-clock',    () => tRpc.call('open_clock', matchId));
+    btn('button-players',  () => tRpc.call('open_players', matchId));
+    btn('button-options',  () => tRpc.call('open_view_options', matchId));
+    btn('button-help',     () => tRpc.call('open_info', gameName));
+    btn('button-template', () => tRpc.call('open_save_template', matchId));
+    btn('button-clone',    () => tRpc.call('new_match', gameName));
+    btn('button-camera',   () => tRpc.call('open_camera_view', matchId, gameName));
+    btn('button-moves',    () => tRpc.call('open_moves', matchId));
+    btn('button-stop-video', StopRecording);
+    btn('button-video',    StartRecording);
+
+    // ── Actions directes sur joclyMatch ──────────────────────────────────────
+    btn('button-takeback', async () => {
+        if (!joclyMatch) return;
+        await joclyMatch.abortUserTurn().catch(() => {});
+        await joclyMatch.abortMachineSearch().catch(() => {});
+        await joclyMatch.rollback(-1);   // -1 = un coup en arrière
     });
 
-    // Boutons de contrôle
-    const btn = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
-    btn('button-takeback',  () => tRpc.call('take_back', matchId));
-    btn('button-restart',   () => tRpc.call('restart', matchId));
-    btn('button-history',   () => tRpc.call('open_history', matchId));
-    btn('button-clock',     () => tRpc.call('open_clock', matchId));
-    btn('button-replay',    () => tRpc.call('replay_last_move', matchId));
-    btn('button-pause',     () => tRpc.call('pause', matchId, true)
-        .then(() => UpdatePause()));
-    btn('button-resume',    () => tRpc.call('pause', matchId, false)
-        .then(() => UpdatePause()));
-    btn('button-players',   () => tRpc.call('open_players', matchId));
-    btn('button-options',   () => tRpc.call('open_view_options', matchId));
-    btn('button-help',      () => tRpc.call('open_info', gameName));
-    btn('button-template',  () => tRpc.call('open_save_template', matchId));
-    btn('button-clone',     () => tRpc.call('clone_match', matchId));
-    btn('button-camera',    () => tRpc.call('open_camera_view', matchId, gameName));
-    btn('button-moves',     () => tRpc.call('open_moves', matchId));
-    btn('button-stop-video', StopRecording);
-    btn('button-video',     StartRecording);
+    btn('button-restart', async () => {
+        if (!joclyMatch) return;
+        await joclyMatch.abortUserTurn().catch(() => {});
+        await joclyMatch.abortMachineSearch().catch(() => {});
+        await joclyMatch.rollback(0);    // 0 = retour au début
+        paused = false;
+        UpdatePause();
+        if (!loopActive) gameLoop();
+    });
+
+    btn('button-pause', () => {
+        paused = true;
+        joclyMatch?.abortUserTurn().catch(() => {});
+        UpdatePause();
+    });
+
+    btn('button-resume', () => {
+        paused = false;
+        UpdatePause();
+    });
+
+    // Replay : revenir au coup précédent visuellement sans modifier l'état
+    btn('button-replay', async () => {
+        if (!joclyMatch) return;
+        const moves = await joclyMatch.getPlayedMoves();
+        if (moves && moves.length > 0) {
+            await joclyMatch.rollback(moves.length - 1).catch(() => {});
+        }
+    });
 
     // Sauvegarde JSON
     btn('button-save', () => {
@@ -197,10 +199,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Chargement JSON
     const fileElem = document.getElementById('fileElem');
-    fileElem?.addEventListener('change', function () {
+    fileElem?.addEventListener('change', async () => {
+        if (!joclyMatch || !fileElem.files[0]) return;
         const reader = new FileReader();
         reader.readAsText(fileElem.files[0]);
-        reader.onload = e => tRpc.call('load_match', matchId, JSON.parse(e.target.result));
+        reader.onload = async (e) => {
+            await joclyMatch.abortUserTurn().catch(() => {});
+            await joclyMatch.abortMachineSearch().catch(() => {});
+            await joclyMatch.load(JSON.parse(e.target.result));
+            loopActive = false;
+            paused = false;
+            UpdatePause();
+            gameLoop();
+        };
     });
     btn('button-load', () => fileElem?.click());
 
@@ -209,38 +220,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         joclyMatch?.viewControl('takeSnapshot').then(snapshot => {
             const a = document.createElement('a');
             a.href = snapshot; a.download = gameName + '.png'; a.click();
-        }).catch(e => console.warn('Snapshot error:', e));
+        }).catch(e => console.warn('[play] Snapshot error:', e));
     });
 
-    function UpdatePause() {
-        tRpc.call('is_paused', matchId).then(paused => {
-            document.getElementById('button-pause').style.display  = paused ? 'none' : '';
-            document.getElementById('button-resume').style.display = paused ? '' : 'none';
-        });
-    }
-    UpdatePause();
-
     // ── Init Jocly ────────────────────────────────────────────────────────────
+    console.info('[play] creating Jocly match for', gameName);
     joclyMatch = await Jocly.createMatch(gameName);
-    const fullConfig = await joclyMatch.getConfig(config);
+    console.info('[play] match created');
 
+    const fullConfig = await joclyMatch.getConfig();
     const supports3D = (() => {
         try { return !!window.WebGLRenderingContext &&
               !!document.createElement('canvas').getContext('experimental-webgl'); }
-        catch { return false; }
+        catch (e) { return false; }
     })();
-    const skins = (fullConfig.view.skins || []).filter(s => supports3D || !s['3d']);
-
-    const storedOptions = await store.get('view-options:' + gameName);
+    const skins = (fullConfig?.view?.skins || []).filter(s => supports3D || !s['3d']);
+    const storedOptions = await store.get('view-options:' + gameName).catch(() => null);
+    const defaultSkin = skins[0]?.name;
     let viewOptions = Object.assign({
         sounds: true, notation: false, moves: true,
         autoComplete: false, viewAs: Jocly.PLAYER_A,
-    }, fullConfig.view.defaultOptions, storedOptions, viewOptionsFromUrl);
-    if (!skins.find(s => s.name === viewOptions.skin))
-        viewOptions.skin = skins[0]?.name;
+    }, fullConfig?.view?.defaultOptions || {}, storedOptions || {}, viewOptionsFromUrl || {});
+    if (defaultSkin && !skins.find(s => s.name === viewOptions.skin))
+        viewOptions.skin = defaultSkin;
 
-    await joclyMatch.attachElement(document.querySelector('.game-area'), { viewOptions });
+    const gameArea = document.querySelector('.game-area');
+    if (!gameArea) throw new Error('[play] .game-area not found in DOM');
 
-    // Signaler que la fenêtre est prête (twu.ready() émet 'window-ready')
+    await joclyMatch.attachElement(gameArea, { viewOptions });
+    console.info('[play] element attached, starting game loop');
+
+    UpdatePause();
     await twu.ready();
+
+    // Lancer la boucle de jeu
+    gameLoop();
 });
