@@ -1,4 +1,8 @@
 // app/content/hub.js  —  Fenêtre principale Tabulon
+//
+// Navigation unifiée : liste des jeux à gauche + panneau de détail à droite
+// (fusion de l'ancien game.html/game.js — la fiche jeu ne s'ouvre plus dans
+// une fenêtre séparée, la sélection est une navigation interne JS).
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
@@ -6,8 +10,17 @@ import { open, Store, listen } from './tauri-bridge.js';
 let store;
 let gameList = [], gamesMap = {};
 let allGameList = [], favGameList = [], templateList = [];
+let favoritesMap = {};   // gameName -> timestamp ; état des étoiles de la liste
 let filterTimer = null;
 let appInfo = { name: 'Tabulon', version: '', homepage: '' };
+
+// ── Panneau de détail (ex-game.js) ────────────────────────────────────────────
+let currentGame = null;     // gameName actuellement affiché dans le détail
+let visualTimer = null;     // interval de rotation des visuels 600x600
+// Passe à false si hub.html ne contient pas le panneau de détail (fichier
+// obsolète / cache) : le hub reste alors utilisable en mode dégradé (liste
+// + raccourcis) au lieu de planter avant ListGames().
+let detailAvailable = true;
 
 const defaultFavorites = {
     'classic-chess': 100, 'draughts': 90, 'scrum': 80, 'reversi': 70,
@@ -40,16 +53,42 @@ function UpdateGameList() {
         const li = document.createElement('li');
         li.className = 'list-group-item object-list-item';
         li.dataset.game = game.gameName;
+        if (game.gameName === currentGame) li.classList.add('active');
+        const isFav = !!favoritesMap[game.gameName];
         li.innerHTML = `
             <img class="media-object pull-left" src="${game.thumbnail}" width="48" height="48"/>
             <div class="media-body"><strong>${game.title}</strong><p>${game.summary}</p></div>
-            <div title="Quick play" class="media-object pull-right list-shortcut">
+            <div title="${isFav ? 'Unfavorite' : 'Favorite'}" class="media-object pull-right list-shortcut list-shortcut-fav">
+                <span class="icon ${isFav ? 'icon-star' : 'icon-star-empty'}"></span>
+            </div>
+            <div title="Rules, credits, about" class="media-object pull-right list-shortcut list-shortcut-info">
+                <span class="icon icon-info-circled"></span>
+            </div>
+            <div title="Clocked play" class="media-object pull-right list-shortcut list-shortcut-clock">
+                <span class="icon icon-clock"></span>
+            </div>
+            <div title="Quick play" class="media-object pull-right list-shortcut list-shortcut-play">
                 <span class="icon icon-play"></span>
             </div>`;
-        li.addEventListener('click', () => tRpc.call('open_game', game.gameName));
-        li.querySelector('.list-shortcut').addEventListener('click', (e) => {
+        li.addEventListener('click', () => SelectGame(game.gameName));
+        const shortcut = (sel, fn) => li.querySelector(sel).addEventListener('click', (e) => {
             e.stopPropagation();
-            tRpc.call('new_match', game.gameName);
+            fn();
+        });
+        shortcut('.list-shortcut-play',  () => tRpc.call('new_match', game.gameName));
+        shortcut('.list-shortcut-clock', () => tRpc.call('open_clock_setup', game.gameName));
+        shortcut('.list-shortcut-info',  () => tRpc.call('open_info', game.gameName));
+        shortcut('.list-shortcut-fav',   async () => {
+            const nowFav = !favoritesMap[game.gameName];
+            // Optimiste : refléter l'étoile tout de suite ; le push
+            // updateFavorites de Rust réconciliera l'état.
+            if (nowFav) favoritesMap[game.gameName] = Date.now();
+            else        delete favoritesMap[game.gameName];
+            const icon = li.querySelector('.list-shortcut-fav .icon');
+            icon.className = 'icon ' + (nowFav ? 'icon-star' : 'icon-star-empty');
+            li.querySelector('.list-shortcut-fav').title = nowFav ? 'Unfavorite' : 'Favorite';
+            await tRpc.call('set_favorite', game.gameName, nowFav);
+            if (game.gameName === currentGame) UpdateDetailFavorite();
         });
         ul.appendChild(li);
     });
@@ -66,15 +105,166 @@ async function ListGames() {
     for (const g in defaultFavorites)
         if (!gamesMap[g]) delete defaultFavorites[g];
 
+    await UpdateFavoriteGames();   // alimente favoritesMap pour les étoiles
+
     const navLast = await store.get('nav-last') || 'games-fav';
     document.getElementById('nav-' + navLast)?.click();
 }
 
 async function UpdateFavoriteGames(favorites) {
     favorites = favorites || await store.get('favoriteGames') || defaultFavorites;
+    favoritesMap = favorites;
     favGameList = Object.keys(favorites)
         .map(n => ({ gameName: n, lastSet: favorites[n] || 0, ...gamesMap[n] }))
         .sort((a, b) => b.lastSet - a.lastSet);
+}
+
+// ── Panneau de détail : sélection d'un jeu ────────────────────────────────────
+//
+// Remplace tRpc.call('open_game', gameName) — plus aucune fenêtre ouverte,
+// la fiche est rendue dans le panneau droit du hub.
+//
+// opts.reveal : sur écran étroit (tablette portrait), true bascule la vue
+// liste → détail (classe .show-detail). false pour la restauration au
+// démarrage, afin de ne pas masquer la liste sans action de l'utilisateur.
+async function SelectGame(gameName, opts = {}) {
+    if (!detailAvailable || !gamesMap[gameName]) return;
+    currentGame = gameName;
+    store.set('last-game', gameName);
+
+    // Surligner l'élément sélectionné dans la liste
+    document.querySelectorAll('#game-list li.list-group-item').forEach(li =>
+        li.classList.toggle('active', li.dataset.game === gameName));
+
+    if (opts.reveal !== false)
+        document.getElementById('game-list-pane').classList.add('show-detail');
+
+    const config = await Jocly.getGameConfig(gameName);
+    if (currentGame !== gameName) return;   // sélection changée entre-temps
+
+    document.getElementById('game-detail-empty').style.display = 'none';
+    document.getElementById('game-detail-body').style.display  = '';
+
+    document.querySelector('#game-detail .game-title').textContent = config.model['title-en'];
+    document.querySelector('#game-detail .game-summary').textContent = config.model.summary;
+    document.querySelector('#game-detail .game-thumbnail').style.backgroundImage =
+        `url(${config.view.fullPath}/${config.model.thumbnail})`;
+
+    SetupVisuals(config.view);
+    await UpdateDetailFavorite();
+    await UpdateDetailTemplates();
+}
+
+// Visuels animés 600x600 (rotation crossfade toutes les 5 s), repris de
+// l'ancienne game.html. Contrairement à game.js (une fenêtre par jeu),
+// il faut nettoyer l'interval et le conteneur à chaque changement de jeu.
+function SetupVisuals(view) {
+    clearInterval(visualTimer);
+    visualTimer = null;
+    const container = document.querySelector('#game-detail .visuals > div');
+    container.innerHTML = '';
+
+    if (!view.visuals?.['600x600']) return;
+    const visuals = [view.visuals['600x600']].flat().map(v => view.fullPath + '/' + v);
+
+    visuals.forEach((url, index) => {
+        const div = document.createElement('div');
+        div.dataset.index = index;
+        div.style.backgroundImage = `url(${url})`;
+        div.style.opacity = '0';
+        container.appendChild(div);
+    });
+
+    let visualIndex = -1;
+    function NextVisual() {
+        visualIndex = (visualIndex + 1) % visuals.length;
+        container.querySelectorAll('div').forEach(el => el.style.opacity = '0');
+        container.querySelector(`div[data-index="${visualIndex}"]`).style.opacity = '1';
+    }
+    NextVisual();
+    if (visuals.length > 1)
+        visualTimer = setInterval(NextVisual, 5000);
+}
+
+async function UpdateDetailFavorite() {
+    if (!currentGame) return;
+    const fav = await tRpc.call('is_favorite', currentGame);
+    document.getElementById('favorite').style.display   = fav ? 'none' : '';
+    document.getElementById('unfavorite').style.display = fav ? '' : 'none';
+}
+
+// Templates filtrés par le jeu sélectionné (repris de game.js)
+async function UpdateDetailTemplates() {
+    if (!currentGame) return;
+    const templates = await store.get('templates') || {};
+    const block     = document.querySelector('#game-detail .templates-block');
+    const container = document.querySelector('#game-detail .templates');
+    container.innerHTML = '';
+    const list = Object.entries(templates)
+        .map(([name, t]) => ({ templateName: name, ...t }))
+        .filter(t => t.gameName === currentGame)
+        .sort((a, b) => b.lastUsed - a.lastUsed);
+    block.style.display = list.length ? '' : 'none';
+    list.forEach(template => {
+        const div = document.createElement('div');
+        div.className = 'template';
+        div.textContent = template.templateName;
+        div.addEventListener('click', () => tRpc.call('play_template', template.templateName));
+        container.appendChild(div);
+    });
+}
+
+// Boutons d'action du panneau de détail — liés une seule fois au chargement,
+// ils opèrent sur currentGame.
+function InitDetailButtons() {
+    // hub.js et hub.html doivent être de la même version. Si le panneau de
+    // détail manque (ancien hub.html encore servi), on désactive le panneau
+    // avec un message actionnable au lieu de laisser un TypeError bloquer
+    // tout le DOMContentLoaded (et donc le chargement de la liste des jeux).
+    const required = ['quickplay', 'clockedplay', 'info', 'boardstate',
+        'favorite', 'unfavorite', 'fileElem', 'openbook', 'detail-back',
+        'game-detail-body', 'game-detail-empty'];
+    const missing = required.filter(id => !document.getElementById(id));
+    if (missing.length) {
+        detailAvailable = false;
+        console.error('[hub] hub.html obsolète — éléments manquants :', missing.join(', '),
+            '\nLe panneau de détail est désactivé. Vérifier que app/content/hub.html',
+            'est à jour, puis supprimer src-tauri/target/ (assets embarqués périmés) et relancer.');
+        return;
+    }
+
+    const g = () => currentGame;
+    document.getElementById('quickplay').addEventListener('click',   () => g() && tRpc.call('new_match', g()));
+    document.getElementById('clockedplay').addEventListener('click', () => g() && tRpc.call('open_clock_setup', g()));
+    document.getElementById('info').addEventListener('click',        () => g() && tRpc.call('open_info', g()));
+    document.getElementById('boardstate').addEventListener('click',  () => g() && tRpc.call('open_board_state', g()));
+
+    document.getElementById('favorite').addEventListener('click', async () => {
+        if (!g()) return;
+        await tRpc.call('set_favorite', g(), true);
+        UpdateDetailFavorite();
+    });
+    document.getElementById('unfavorite').addEventListener('click', async () => {
+        if (!g()) return;
+        await tRpc.call('set_favorite', g(), false);
+        UpdateDetailFavorite();
+    });
+
+    document.getElementById('fileElem').addEventListener('change', function () {
+        if (!g()) return;
+        const reader = new FileReader();
+        reader.readAsText(this.files[0]);
+        reader.onload = (e) => tRpc.call('open_book', g(), this.value, e.target.result);
+        this.value = '';
+    });
+    document.getElementById('openbook').addEventListener('click', () => {
+        if (g()) document.getElementById('fileElem').click();
+    });
+
+    // Retour liste sur écran étroit
+    document.getElementById('detail-back').addEventListener('click', () => {
+        document.getElementById('game-list-pane').classList.remove('show-detail');
+    });
 }
 
 // ── Templates ─────────────────────────────────────────────────────────────────
@@ -160,11 +350,14 @@ listen('notifyUser', ({ payload }) => {
 tRpc.listen({
     updateFavorites: async (favorites) => {
         await UpdateFavoriteGames(favorites);
-        if (await store.get('nav-last') === 'games-fav') { gameList = favGameList; UpdateGameList(); }
+        if (await store.get('nav-last') === 'games-fav') gameList = favGameList;
+        UpdateGameList();           // re-rendre : les étoiles changent aussi dans All
+        UpdateDetailFavorite();     // synchroniser le bouton Favorite du détail
     },
     updateTemplates: async (templates) => {
         await UpdateTemplates(templates);
         if (await store.get('nav-last') === 'templates') UpdateTemplateList();
+        UpdateDetailTemplates();    // synchroniser les templates du détail
     },
     // update-available vient du plugin updater
 });
@@ -196,10 +389,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('gamefilter').addEventListener('input', Filter);
+    try { InitDetailButtons(); }
+    catch (e) { detailAvailable = false; console.error('[hub] InitDetailButtons:', e); }
 
     console.info('[hub] calling ListGames()');
     await ListGames();
     console.info('[hub] ListGames() done — allGameList has', allGameList.length, 'games');
+
+    // Restaurer la dernière fiche consultée (sans basculer la vue tablette)
+    const lastGame = await store.get('last-game');
+    if (lastGame && gamesMap[lastGame])
+        SelectGame(lastGame, { reveal: false });
+
     RenderAbout();
     await twu.init(appInfo.name + ' ' + appInfo.version);
     twu.ready();

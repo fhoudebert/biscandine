@@ -1,6 +1,16 @@
 // app/content/clock.js
-import tRpc from './tabulon-rpc.js';
-import twu  from './tabulon-winutils.js';
+//
+// Fenêtre satellite : affichage de l'horloge du match.
+// L'état de l'horloge vit dans play.js (modèle JoclyBoard où il vivait dans
+// le main process). Communication par events Tauri :
+//   requête  : emit('play-req:{matchId}:get-clock')
+//   réponse  : listen('play-rep:{matchId}:get-clock', {players, clock})
+//   push     : listen('play-event:{matchId}:update-clock', {players, clock})
+//              (émis par play.js à chaque changement de tour / fin de partie)
+// L'ancien tRpc.call('get_clock') invoquait une commande Rust qui n'existe
+// pas → promise rejeté → fenêtre vide.
+import twu from './tabulon-winutils.js';
+import { listen, emit } from './tauri-bridge.js';
 
 const matchId = (function () {
     const m = /\?.*\bid=([0-9]+)/.exec(window.location.href);
@@ -8,6 +18,7 @@ const matchId = (function () {
 })();
 
 let timers = {}, clock = null;
+let started = false;
 
 function TimeFormat(ms) {
     let text = '';
@@ -41,21 +52,24 @@ function Update() {
     });
 }
 
-function UpdateClock() {
-    return tRpc.call('get_clock', matchId)
-        .then(({ players, clock: _clock }) => {
-            clock = _clock;
-            document.querySelectorAll('.players > div, .times > div')
-                .forEach(el => el.classList.remove('turn'));
-            [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach((which) => {
-                document.getElementById('clock-player' + which).textContent = players[which].name;
-                if (clock && clock.turn === which) {
-                    document.getElementById('clock-player' + which).classList.add('turn');
-                    document.getElementById('clock-time'   + which).classList.add('turn');
-                }
-            });
-            Update();
-        });
+// Applique un état {players, clock} reçu de play.js (réponse ou push)
+function ApplyClock({ players, clock: _clock }) {
+    clock = _clock;
+    document.querySelectorAll('.players > div, .times > div')
+        .forEach(el => el.classList.remove('turn'));
+    [Jocly.PLAYER_A, Jocly.PLAYER_B].forEach((which) => {
+        document.getElementById('clock-player' + which).textContent = players[which].name;
+        if (clock && clock.turn === which) {
+            document.getElementById('clock-player' + which).classList.add('turn');
+            document.getElementById('clock-time'   + which).classList.add('turn');
+        }
+    });
+    Update();
+    if (!started) {
+        started = true;
+        setInterval(Update, 100);
+        twu.ready();
+    }
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -71,10 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.querySelector('.clock .times').appendChild(td);
     });
 
-    tRpc.listen({ updateClock: UpdateClock });
-
-    UpdateClock().then(() => {
-        setInterval(Update, 100);
-        twu.ready();
-    });
+    await listen(`play-rep:${matchId}:get-clock`,      ({ payload }) => ApplyClock(payload));
+    await listen(`play-event:${matchId}:update-clock`, ({ payload }) => ApplyClock(payload));
+    await emit(`play-req:${matchId}:get-clock`, null);
 });

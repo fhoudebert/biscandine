@@ -10,7 +10,7 @@
 
 import tRpc from './tabulon-rpc.js';
 import twu  from './tabulon-winutils.js';
-import { Store, listen, emit } from './tauri-bridge.js';
+import { Store, listen, emit, save as saveDialog } from './tauri-bridge.js';
 
 // -- Parametres d'URL ---------------------------------------------------------
 const gameName = new URLSearchParams(window.location.search).get('game') || 'classic-chess';
@@ -30,6 +30,71 @@ const clockConfig = (() => {
 })();
 // ID de la partie dont on fork la position (store key "fork:{forkId}")
 const forkId = new URLSearchParams(window.location.search).get('fork') || null;
+
+// -- Horloge --------------------------------------------------------------------
+// Modèle JoclyBoard (joc/app/joclyboard.js) : l'état de l'horloge vit ici,
+// la fenêtre clock.html ne fait que l'afficher. Sans clocked play, on tient
+// quand même une horloge countup (temps de réflexion cumulé par joueur),
+// comme l'original. turn/t0 sont posés au fil de la partie par ClockTurn().
+let clock         = clockConfig ? { ...clockConfig } : { mode: 'countup', 1: 0, '-1': 0 };
+let originalClock = { ...clock };
+
+function ClockPayload() {
+    return {
+        players: {
+            1:    { name: 'Player A' },   // Jocly.PLAYER_A
+            '-1': { name: 'Player B' },   // Jocly.PLAYER_B
+        },
+        clock,
+    };
+}
+
+function EmitClock() {
+    emit(`play-event:${matchId}:update-clock`, ClockPayload()).catch(() => {});
+}
+
+// Changement de tour : débite le temps écoulé du joueur qui vient de jouer
+// (+ bonus xtrasec / moves-per-session en countdown), puis démarre le temps
+// du nouveau joueur. Portage fidèle de joclyboard.js::nextMove().
+async function ClockTurn(turn) {
+    if (!clock || clock.turn === turn) return;
+    const now = Date.now();
+    const otherTurn = -turn;   // PLAYER_A=1 / PLAYER_B=-1
+    if (clock.turn === otherTurn) {
+        if (clock.mode === 'countdown') {
+            clock[otherTurn] -= now - clock.t0;
+            if (clock['xtrasec_' + otherTurn] || clock['mps_' + otherTurn]) {
+                const nMoves = (await joclyMatch?.getPlayedMoves().catch(() => []))?.length || 0;
+                if (clock['xtrasec_' + otherTurn] && nMoves > 0 &&
+                    clock['last_xtrasec_' + otherTurn] !== nMoves) {
+                    clock[otherTurn] += clock['xtrasec_' + otherTurn] * 1000;
+                    clock['last_xtrasec_' + otherTurn] = nMoves;
+                }
+                if (clock['mps_' + otherTurn] && nMoves > 1 &&
+                    Math.floor(nMoves / 2) % clock['mps_' + otherTurn] === 0 &&
+                    clock['last_mps_' + otherTurn] !== nMoves) {
+                    clock[otherTurn] += originalClock[otherTurn];
+                    clock['last_mps_' + otherTurn] = nMoves;
+                }
+            }
+        } else {
+            clock[otherTurn] += now - clock.t0;
+        }
+    }
+    clock.t0 = now;
+    clock.turn = turn;
+    EmitClock();
+}
+
+// Fin de partie : solde le temps du joueur courant et arrête l'horloge.
+function ClockStop() {
+    if (!clock || !clock.turn) return;
+    const now = Date.now();
+    if (clock.mode === 'countdown') clock[clock.turn] -= now - clock.t0;
+    else                            clock[clock.turn] += now - clock.t0;
+    delete clock.turn;
+    EmitClock();
+}
 
 // -- Etat ---------------------------------------------------------------------
 let joclyMatch   = null;
@@ -53,6 +118,7 @@ async function gameLoop() {
             }
 
             const turn = await joclyMatch.getTurn();
+            await ClockTurn(turn);
             const level = players[turn];   // null = humain, objet = IA
 
             let finished = false;
@@ -99,6 +165,7 @@ async function gameLoop() {
             }
 
             if (finished) {
+                ClockStop();
                 UpdateFooter(winner === 0 ? 'Draw'
                     : winner > 0 ? 'Player A wins'
                     : 'Player B wins');
@@ -253,6 +320,11 @@ function initSatelliteListeners() {
         await joclyMatch.rollback(payload?.index ?? 0).catch(e => console.warn('[play] rollback:', e));
     });
 
+    // get-clock : état de l'horloge pour la fenêtre clock.html
+    listen(prefix + 'get-clock', async () => {
+        await emit(`play-rep:${matchId}:get-clock`, ClockPayload());
+    });
+
     // get-possible-moves : retourne les coups possibles depuis la position actuelle
     listen(prefix + 'get-possible-moves', async () => {
         if (!joclyMatch) return;
@@ -287,6 +359,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.querySelector('.game-area').webkitRequestFullscreen?.());
 
     const btn = (id, fn) => document.getElementById(id)?.addEventListener('click', fn);
+
+    // Bouton '…' : montre/masque la barre de boutons (état persisté).
+    // Remplace le survol .ephemeral-actions:hover de JoclyBoard, inutilisable
+    // sur tablette.
+    const ephemeralActions = document.querySelector('.ephemeral-actions');
+    if (await store.get('play-footer-bar').catch(() => false))
+        ephemeralActions?.classList.add('bar-visible');
+    btn('button-toggle-bar', () => {
+        const visible = ephemeralActions?.classList.toggle('bar-visible');
+        store?.set('play-footer-bar', !!visible);
+    });
+
     btn('button-history',  () => tRpc.call('open_history', matchId));
     btn('button-clock',    () => tRpc.call('open_clock', matchId));
     btn('button-players',  () => tRpc.call('open_players', matchId));
@@ -356,29 +440,57 @@ document.addEventListener('DOMContentLoaded', async () => {
             await joclyMatch.rollback(moves.length - 1).catch(() => {});
     });
 
-    btn('button-save', () => {
-        joclyMatch?.save().then(data => {
-            const a = document.createElement('a');
-            a.href = 'data:application/octet-stream,' + encodeURIComponent(JSON.stringify(data, null, 2));
-            a.download = gameName + '.json';
-            a.click();
-        });
+    // Save : équivalent du download JSON de JoclyBoard. Le `data:` URI +
+    // a.click() d'Electron ne déclenche rien dans la WebView Tauri (pas de
+    // download manager) : on passe par le dialogue natif "Enregistrer sous"
+    // (plugin dialog) puis la commande Rust save_text_file écrit le fichier.
+    btn('button-save', async () => {
+        if (!joclyMatch) return;
+        const data = await joclyMatch.save().catch(() => null);
+        if (!data) return;
+        const path = await saveDialog({
+            defaultPath: gameName + '.json',
+            filters: [{ name: 'Jocly match', extensions: ['json'] }],
+        }).catch(() => null);
+        if (!path) return;   // dialogue annulé
+        await tRpc.call('save_text_file', path, JSON.stringify(data, null, 2))
+            .catch(e => console.warn('[play] save failed:', e));
     });
 
+    // Load : équivalent de loadMatch → MatchAction → KeepPlaying de JoclyBoard.
+    // L'ancien code forçait loopActive=false puis relançait gameLoop()
+    // immédiatement : l'ancienne boucle, réveillée par l'abort (branche
+    // `continue`), retrouvait loopActive=true posé par la NOUVELLE boucle →
+    // deux boucles concurrentes s'avortant mutuellement. Comme JoclyBoard
+    // (KeepPlaying), on charge et on laisse la boucle en cours continuer sur
+    // la nouvelle position ; on ne redémarre que si elle était arrêtée
+    // (partie terminée).
     const fileElem = document.getElementById('fileElem');
     fileElem?.addEventListener('change', async () => {
         if (!joclyMatch || !fileElem.files[0]) return;
         const reader = new FileReader();
         reader.readAsText(fileElem.files[0]);
         reader.onload = async (e) => {
+            fileElem.value = '';   // permet de recharger le même fichier
+            let data;
+            try { data = JSON.parse(e.target.result); }
+            catch { console.warn('[play] load: invalid JSON'); return; }
             await joclyMatch.abortUserTurn().catch(() => {});
             await joclyMatch.abortMachineSearch().catch(() => {});
-            await joclyMatch.load(JSON.parse(e.target.result));
-            loopActive = false;
+            try { await joclyMatch.load(data); }
+            catch (err) {
+                // ex. "Trying to load X to Y match" (mauvais jeu)
+                console.warn('[play] load failed:', err.message);
+                UpdateFooter('Load failed: wrong game file?');
+                if (!loopActive) gameLoop();
+                return;
+            }
             paused = false;
             UpdatePause();
             UpdateFooter('');
-            gameLoop();
+            // Rafraîchir les satellites (history) sur la nouvelle position
+            emit(`play-event:${matchId}:move-played`, null).catch(() => {});
+            if (!loopActive) gameLoop();
         };
     });
     btn('button-load', () => fileElem?.click());

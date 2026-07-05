@@ -113,7 +113,6 @@ function buildPayload(method, args) {
     get_players_info:    ([matchId])               => ({ matchId }),
     set_players:         ([matchId, players])      => ({ matchId, players }),
     // clock
-    get_clock:           ([matchId])               => ({ matchId }),
     open_clock:          ([matchId])               => ({ matchId }),
     // view
     get_view_info:       ([matchId])               => ({ matchId }),
@@ -157,12 +156,12 @@ function buildPayload(method, args) {
     book_history_view:   ([matchId, spec])             => ({ matchId, spec }),
     notify_user_response:([token, result])             => ({ token, result }),
     // windows — hub actions
-    open_game:           ([gameName])                  => ({ gameName }),
     edit_engine:         ([id])                        => ({ id }),
     open_book_history:   ([matchId])                   => ({ matchId }),
     open_position:       ([gameName, matchId])         => ({ gameName, matchId }),
     // fs
     read_text_file:      ([path])                  => ({ path }),
+    save_text_file:      ([path, contents])        => ({ path, contents }),
     // camera
     get_camera:          ([matchId])               => ({ matchId }),
     set_camera:          ([matchId, details])      => ({ matchId, details }),

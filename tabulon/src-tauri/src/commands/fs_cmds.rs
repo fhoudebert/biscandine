@@ -98,3 +98,19 @@ pub fn parse_pjn(data: String) -> Result<Vec<serde_json::Value>, String> {
 
     Ok(matches)
 }
+
+/// Écrit un fichier texte (UTF-8) à un chemin absolu.
+///
+/// Utilisé par :
+///   - play.js : bouton Save — le téléchargement `data:` URI + a.click()
+///     d'Electron/JoclyBoard n'a pas d'équivalent dans la WebView Tauri
+///     (pas de download manager) ; on passe par le dialogue natif du
+///     plugin dialog pour choisir le chemin, puis cette commande écrit.
+#[tauri::command]
+pub fn save_text_file(path: String, contents: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.is_absolute() {
+        return Err(format!("save_text_file: chemin non absolu: {path}"));
+    }
+    fs::write(p, contents).map_err(|e| format!("save_text_file: {e}"))
+}

@@ -69,7 +69,6 @@ pub fn run() {
             window_cmds::open_book_match,
             window_cmds::open_moves,
             window_cmds::relay_to_window,
-            window_cmds::open_game,
             window_cmds::open_book_history,
             window_cmds::open_position,
             // ── Hub ───────────────────────────────────────────────────────────
@@ -86,6 +85,7 @@ pub fn run() {
             video_cmds::record_frame,
             // ── Fichiers ─────────────────────────────────────────────────────
             fs_cmds::read_text_file,
+            fs_cmds::save_text_file,
             fs_cmds::parse_pjn,
         ])
         .run(tauri::generate_context!())

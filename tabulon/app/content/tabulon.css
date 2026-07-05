@@ -187,41 +187,47 @@ html, body {
   vertical-align: middle;
   speak: none;
 }
-/* Les codes Entypo restent identiques à photonkit */
-.icon-ccw::before           { content: '\e000'; }
-.icon-cw::before            { content: '\e001'; }
-.icon-pause::before         { content: '\e002'; }
-.icon-play::before          { content: '\e003'; }
-.icon-stop::before          { content: '\e004'; }
-.icon-back::before          { content: '\e005'; }
-.icon-forward::before       { content: '\e006'; }
-.icon-to-start::before      { content: '\e007'; }
-.icon-to-end::before        { content: '\e008'; }
-.icon-left-dir::before      { content: '\e009'; }
-.icon-right-dir::before     { content: '\e00a'; }
-.icon-up-dir::before        { content: '\e00b'; }
-.icon-down-dir::before      { content: '\e00c'; }
-.icon-down-bold::before     { content: '\e00d'; }
-.icon-users::before         { content: '\e00e'; }
-.icon-eye::before           { content: '\e00f'; }
-.icon-list::before          { content: '\e010'; }
-.icon-clock::before         { content: '\e011'; }
-.icon-level-down::before    { content: '\e012'; }
-.icon-resize-full::before   { content: '\e013'; }
-.icon-download::before      { content: '\e014'; }
-.icon-upload::before        { content: '\e015'; }
-.icon-camera::before        { content: '\e016'; }
-.icon-video::before         { content: '\e017'; }
-.icon-layout::before        { content: '\e018'; }
-.icon-flow-cascade::before  { content: '\e019'; }
-.icon-target::before        { content: '\e01a'; }
-.icon-menu::before          { content: '\e01b'; }
-.icon-star::before          { content: '\e01c'; }
-.icon-star-empty::before    { content: '\e01d'; }
-.icon-info-circled::before  { content: '\e01e'; }
-.icon-location::before      { content: '\e01f'; }
-.icon-book::before          { content: '\e020'; }
-.icon-dot-3::before         { content: '\e021'; }
+/* Codepoints photon-entypo réels (extraits de photonkit/dist/css/photon.css —
+   la police mappe les glyphes en \e8xx ; les anciens \e000-\e021 étaient des
+   placeholders inexistants dans le woff, d'où des icônes invisibles) */
+.icon-ccw::before           { content: '\e88f'; }
+.icon-cw::before            { content: '\e890'; }
+.icon-pause::before         { content: '\e899'; }
+.icon-play::before          { content: '\e897'; }
+.icon-stop::before          { content: '\e898'; }
+.icon-back::before          { content: '\e820'; }
+.icon-forward::before       { content: '\e832'; }
+.icon-to-start::before      { content: '\e89c'; }
+.icon-to-end::before        { content: '\e89b'; }
+.icon-left-dir::before      { content: '\e884'; }
+.icon-right-dir::before     { content: '\e885'; }
+.icon-up-dir::before        { content: '\e886'; }
+.icon-down-dir::before      { content: '\e883'; }
+.icon-down-bold::before     { content: '\e887'; }
+.icon-users::before         { content: '\e80b'; }
+.icon-eye::before           { content: '\e826'; }
+.icon-list::before          { content: '\e8a5'; }
+.icon-clock::before         { content: '\e862'; }
+.icon-level-down::before    { content: '\e892'; }
+.icon-resize-full::before   { content: '\e869'; }
+.icon-download::before      { content: '\e82d'; }
+.icon-upload::before        { content: '\e82e'; }
+.icon-camera::before        { content: '\e80f'; }
+.icon-video::before         { content: '\e80d'; }
+.icon-layout::before        { content: '\e810'; }
+.icon-flow-cascade::before  { content: '\e8d8'; }
+.icon-target::before        { content: '\e8a3'; }
+.icon-menu::before          { content: '\e811'; }
+.icon-star::before          { content: '\e808'; }
+.icon-star-empty::before    { content: '\e809'; }
+.icon-info-circled::before  { content: '\e81f'; }
+.icon-location::before      { content: '\e842'; }
+.icon-book::before          { content: '\e84f'; }
+.icon-dot-3::before         { content: '\e8bf'; }
+.icon-cancel::before        { content: '\e813'; }
+.icon-home::before          { content: '\e821'; }
+.icon-info::before          { content: '\e81e'; }
+.icon-plus::before          { content: '\e816'; }
 
 /* ── Formulaires ────────────────────────────────────────────────────────────── */
 .form-group {
@@ -408,6 +414,223 @@ strong { font-weight: 600; }
   color: #7cf;
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* ── Raccourcis dans les listes (portés de JoclyBoard, adaptés en flex) ─────── */
+/* Les items de liste passent en flex : l'image, le corps, puis les raccourcis
+   colorés révélés au survol (vert = quick play, bleu = clocked play,
+   rouge = suppression dans la liste des templates). */
+.object-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+}
+.object-list-item .media-body { flex: 1; min-width: 0; }
+.object-list-item .list-shortcut {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  color: #fff;
+  cursor: pointer;
+  background-color: #0a0;          /* quick play : vert, comme JoclyBoard */
+}
+.object-list-item .list-shortcut .icon { font-size: 17px; color: #fff; }
+.object-list-item:hover .list-shortcut { display: flex; }
+.object-list-item .list-shortcut-clock { background-color: #06c; }
+.object-list-item .list-shortcut-info  { background-color: #667; }
+.object-list-item .list-shortcut-fav   { background-color: #d90; }
+.object-list-item .list-shortcut-del {
+  width: 20px;
+  height: 20px;
+  background-color: #a00;
+}
+.object-list-item .list-shortcut-del .icon { font-size: 11px; }
+/* Écrans tactiles (pas de survol) : raccourcis toujours visibles */
+@media (hover: none) {
+  .object-list-item .list-shortcut { display: flex; }
+}
+
+/* ── Hub : split liste + détail ─────────────────────────────────────────────── */
+/* #game-list-pane : conteneur flex horizontal (liste à gauche, détail à droite) */
+.hub-split {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Colonne liste (recherche + liste scrollable) */
+.game-list-col {
+  flex: 0 0 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-right: 1px solid var(--border);
+}
+.game-list-col > ul {
+  flex: 1;
+  overflow-y: auto;
+  border: none;
+  border-radius: 0;
+}
+
+/* Élément sélectionné dans la liste */
+.list-group-item.active,
+.list-group-item.active:hover { background: var(--accent); }
+.list-group-item.active strong,
+.list-group-item.active .media-body p,
+.list-group-item.active .icon { color: var(--accent-fg); }
+
+/* ── Hub : panneau de détail du jeu (ex-game.html) ──────────────────────────── */
+.game-detail {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* État vide : aucun jeu sélectionné */
+.game-detail-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.game-detail-empty .icon { font-size: 40px; }
+
+.game-detail-body { position: absolute; inset: 0; }
+
+/* Visuels animés 600x600 en fond, rotation crossfade gérée par hub.js */
+.game-detail .visuals,
+.game-detail .visuals > div { position: absolute; inset: 0; }
+.game-detail .visuals > div > div {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+
+/* Carte d'infos superposée aux visuels */
+.game-detail .info {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: min(340px, calc(100% - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, .93);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .18);
+}
+
+.info-game {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.game-thumbnail {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 64px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.game-headings { min-width: 0; }
+.game-title   { font-size: 18px; font-weight: 700; }
+.game-summary { margin-top: 2px; font-size: 13px; color: var(--text-muted); }
+
+/* Boutons d'action empilés */
+.game-detail .buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.game-detail .buttons .btn {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Templates du jeu sélectionné (puces cliquables) */
+.templates-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.template {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.template:hover { background: var(--border); }
+
+/* Bouton retour liste — visible seulement en vue étroite */
+.detail-back {
+  display: none;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+}
+
+/* ── Hub : responsive tablette ──────────────────────────────────────────────── */
+/* Tablette paysage : sidebar réduite aux icônes, liste plus étroite */
+@media (max-width: 900px) {
+  .pane-sm.sidebar { flex: 0 0 52px; }
+  .sidebar .nav-group-title { display: none; }
+  .sidebar .nav-group-item {
+    font-size: 0;             /* masque le texte (nœud texte non wrappé) */
+    justify-content: center;
+    padding: 10px 0;
+  }
+  .sidebar .nav-group-item .icon { font-size: 16px; }
+  .game-list-col { flex-basis: 260px; }
+}
+
+/* Tablette portrait / fenêtre étroite : une seule vue à la fois.
+   Par défaut la liste prend tout ; .show-detail (posée par hub.js à la
+   sélection d'un jeu) bascule sur le détail plein écran, avec bouton retour. */
+@media (max-width: 680px) {
+  .game-list-col { flex: 1; border-right: none; }
+  .game-detail   { display: none; }
+  .hub-split.show-detail .game-list-col { display: none; }
+  .hub-split.show-detail .game-detail   { display: block; flex: 1; }
+  .detail-back { display: inline-block; }
+  .game-detail .info {
+    top: auto;
+    left: 16px;
+    max-height: 70%;
+    width: auto;
+  }
 }
 
 /* ── Fenêtre play.html ─────────────────────────────────────────────────────── */
@@ -656,4 +879,47 @@ strong { font-weight: 600; }
   background: #2980b9;
   color: #fff;
   border-color: #2980b9;
+}
+
+/* ── Fenêtre play.html : barre de boutons repliable ─────────────────────────── */
+/* JoclyBoard révélait la barre au survol (.ephemeral-actions:hover) ; ici la
+   bascule se fait au CLIC sur le bouton '…' (#button-toggle-bar) — plus
+   adapté à la tablette où le survol n'existe pas. play.js pose/retire la
+   classe .bar-visible et persiste l'état dans le store. */
+.ephemeral-actions .ephemeral-appear { display: none; }
+.ephemeral-actions.bar-visible .ephemeral-appear { display: inline-flex; }
+/* Quand la barre est ouverte, le titre s'efface pour lui laisser la place
+   (équivalent du .ephemeral-vanish de JoclyBoard) */
+.ephemeral-actions.bar-visible .ephemeral-vanish { display: none; }
+
+/* ── Fenêtre clock.html (affichage de l'horloge, porté de JoclyBoard) ───────── */
+.clock-content { height: 100%; padding: 0; }
+.clock-content .clock {
+  display: table;
+  height: 100%;
+  width: 100%;
+  table-layout: fixed;
+}
+.clock-content .clock > div       { display: table-row; }
+.clock-content .clock > div > div {
+  display: table-cell;
+  text-align: center;
+  vertical-align: middle;
+}
+/* Temps en police 7 segments ; le joueur au trait est en noir, l'autre grisé */
+.clock-content .times > div {
+  font-family: "7segment";
+  font-size: 15vmax;
+  color: #ccc;
+}
+.clock-content .times > div.turn { color: #000; }
+/* Onglets Player A / Player B ; le joueur au trait en pastille noire */
+.clock-content .players > div {
+  padding: 2px;
+  margin: 2px 6px;
+  border-radius: 4px;
+}
+.clock-content .players > div.turn {
+  background-color: #000;
+  color: #fff;
 }

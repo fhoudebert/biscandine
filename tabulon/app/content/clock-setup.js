@@ -40,28 +40,35 @@ function SetForm(setup) {
     });
 }
 
-function GetTiming(group) {
-    const value = parseInt(group.querySelector('input.time').value);
-    if (isNaN(value)) throw new Error('invalid time');
-    return 1000 * value * parseInt(group.querySelector('select.unit').value);
+// Les champs time/xtrasec/mps d'un même réglage sont répartis sur PLUSIEURS
+// .form-group frères (un par champ). Il faut donc des sélecteurs descendants
+// sur tout le document (`.group-same input.xtrasec`), pas des recherches dans
+// le premier .form-group trouvé : l'ancien code faisait
+// `document.querySelector('.group-same')` (→ uniquement le groupe Time) puis
+// `g.querySelector('input.xtrasec')` (→ null → exception → GetClock() null),
+// ce qui laissait le bouton Play grisé en permanence.
+function GetTiming(prefix) {
+    const value = parseInt(document.querySelector(`${prefix} input.time`).value);
+    if (isNaN(value) || value <= 0) throw new Error('invalid time');
+    return 1000 * value * parseInt(document.querySelector(`${prefix} select.unit`).value);
 }
 
 function GetClock() {
     const clock = { mode: 'countdown' };
     const symmetry = document.querySelector('.symmetry').value;
+    const num = (sel) => parseInt(document.querySelector(sel).value) || 0;
     try {
         // PLAYER_A=1, PLAYER_B=-1 (constantes Jocly, pas besoin que Jocly soit charge)
         if (symmetry === 'same') {
-            const g = document.querySelector('.group-same');
-            clock[1] = clock[-1] = GetTiming(g);
-            clock['xtrasec_1'] = clock['xtrasec_-1'] = parseInt(g.querySelector('input.xtrasec').value) || 0;
-            clock['mps_1']     = clock['mps_-1']     = parseInt(g.querySelector('input.mps').value)    || 0;
+            clock[1] = clock[-1] = GetTiming('.group-same');
+            clock['xtrasec_1'] = clock['xtrasec_-1'] = num('.group-same input.xtrasec');
+            clock['mps_1']     = clock['mps_-1']     = num('.group-same input.mps');
         } else {
             [[0, 1], [1, -1]].forEach(([which, player]) => {
-                const g = document.querySelector(`.group-different.player${which}`);
-                clock[player]                  = GetTiming(g);
-                clock['xtrasec_' + player]     = parseInt(g.querySelector('input.xtrasec').value) || 0;
-                clock['mps_' + player]         = parseInt(g.querySelector('input.mps').value)    || 0;
+                const prefix = `.group-different.player${which}`;
+                clock[player]              = GetTiming(prefix);
+                clock['xtrasec_' + player] = num(`${prefix} input.xtrasec`);
+                clock['mps_' + player]     = num(`${prefix} input.mps`);
             });
         }
         return clock;
@@ -70,7 +77,10 @@ function GetClock() {
 
 function OnChange() {
     UpdateSymmetry(document.querySelector('.symmetry').value);
-    document.getElementById('button-save').classList.toggle('disabled', !GetClock());
+    const ok = !!GetClock();
+    const btn = document.getElementById('button-save');
+    btn.classList.toggle('disabled', !ok);
+    btn.disabled = !ok;
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
