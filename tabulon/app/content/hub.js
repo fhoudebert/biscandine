@@ -6,6 +6,7 @@
 import tRpc       from './tabulon-rpc.js';
 import twu        from './tabulon-winutils.js';
 import { open, Store, listen } from './tauri-bridge.js';
+import { initI18n, t, getLocale } from './tabulon-i18n.js';
 
 let store;
 let gameList = [], gamesMap = {};
@@ -58,16 +59,16 @@ function UpdateGameList() {
         li.innerHTML = `
             <img class="media-object pull-left" src="${game.thumbnail}" width="48" height="48"/>
             <div class="media-body"><strong>${game.title}</strong><p>${game.summary}</p></div>
-            <div title="${isFav ? 'Unfavorite' : 'Favorite'}" class="media-object pull-right list-shortcut list-shortcut-fav">
+            <div title="${isFav ? t('tip.unfavorite') : t('tip.favorite')}" class="media-object pull-right list-shortcut list-shortcut-fav">
                 <span class="icon ${isFav ? 'icon-star' : 'icon-star-empty'}"></span>
             </div>
-            <div title="Rules, credits, about" class="media-object pull-right list-shortcut list-shortcut-info">
+            <div title="${t('tip.rules')}" class="media-object pull-right list-shortcut list-shortcut-info">
                 <span class="icon icon-info-circled"></span>
             </div>
-            <div title="Clocked play" class="media-object pull-right list-shortcut list-shortcut-clock">
+            <div title="${t('tip.clockedPlay')}" class="media-object pull-right list-shortcut list-shortcut-clock">
                 <span class="icon icon-clock"></span>
             </div>
-            <div title="Quick play" class="media-object pull-right list-shortcut list-shortcut-play">
+            <div title="${t('tip.quickPlay')}" class="media-object pull-right list-shortcut list-shortcut-play">
                 <span class="icon icon-play"></span>
             </div>`;
         li.addEventListener('click', () => SelectGame(game.gameName));
@@ -86,7 +87,7 @@ function UpdateGameList() {
             else        delete favoritesMap[game.gameName];
             const icon = li.querySelector('.list-shortcut-fav .icon');
             icon.className = 'icon ' + (nowFav ? 'icon-star' : 'icon-star-empty');
-            li.querySelector('.list-shortcut-fav').title = nowFav ? 'Unfavorite' : 'Favorite';
+            li.querySelector('.list-shortcut-fav').title = nowFav ? t('tip.unfavorite') : t('tip.favorite');
             await tRpc.call('set_favorite', game.gameName, nowFav);
             if (game.gameName === currentGame) UpdateDetailFavorite();
         });
@@ -286,7 +287,7 @@ function UpdateTemplateList() {
         li.innerHTML = `
             <img class="media-object pull-left" src="${game.thumbnail || ''}" width="48" height="48"/>
             <div class="media-body"><strong>${template.templateName}</strong><p>${game.title || ''}</p></div>
-            <div title="Remove" class="media-object pull-right list-shortcut list-shortcut-del">
+            <div title="${t('tip.removeTemplate')}" class="media-object pull-right list-shortcut list-shortcut-del">
                 <span class="icon icon-cancel"></span>
             </div>`;
         li.addEventListener('click', () => tRpc.call('play_template', template.templateName));
@@ -302,18 +303,18 @@ function UpdateTemplateList() {
 function RenderAbout() {
     document.querySelectorAll('.appName').forEach(el => el.textContent = appInfo.name);
     document.querySelectorAll('.appVersion').forEach(el => el.textContent = appInfo.version);
-    const links = {
-        '.goto-joclyboard': appInfo.homepage,
-        '.goto-jocly':      'https://github.com/mi-g/jocly',
-        '.goto-agpl-v3':    'https://www.gnu.org/licenses/agpl-3.0.en.html',
-        '.goto-issue':      'https://github.com/mi-g/joclyboard/issues',
-    };
-    for (const [sel, url] of Object.entries(links)) {
-        document.querySelectorAll(sel).forEach(el => {
-            el.style.cursor = 'pointer';
-            el.addEventListener('click', (e) => { e.preventDefault(); open(url); });
-        });
-    }
+    // Locale retenue (déduite du système), ex. "Français (fr)"
+    document.querySelectorAll('.appLocale').forEach(el =>
+        el.textContent = `${t('lang.' + getLocale())} (${getLocale()})`);
+    // Le panneau About (réécrit côté HTML) contient des <a href> directs :
+    // dans une webview Tauri, un clic les ferait naviguer DANS la fenêtre.
+    // On les intercepte pour les ouvrir dans le navigateur système.
+    document.querySelectorAll('#about a[href]').forEach(el => {
+        if (el.dataset.extBound) return;   // RenderAbout peut être rappelé
+        el.dataset.extBound = '1';
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', (e) => { e.preventDefault(); open(el.getAttribute('href')); });
+    });
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -366,6 +367,7 @@ tRpc.listen({
 
 document.addEventListener('DOMContentLoaded', async () => {
     console.info('[hub] DOMContentLoaded — start');
+    await initI18n();   // locale système, avant tout rendu dynamique
     store   = await Store.load('tabulon.json');
     console.info('[hub] store loaded');
     appInfo = await tRpc.call('get_app_info');
