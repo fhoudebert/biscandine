@@ -7,7 +7,6 @@ use commands::{fs_cmds, hub_cmds, match_cmds, template_cmds, video_cmds, window_
 use video_cmds::VideoState;
 use hub_cmds::NotifyChannels;
 use state::AppState;
-use tauri::Manager;
 use tauri_plugin_cli::CliExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
